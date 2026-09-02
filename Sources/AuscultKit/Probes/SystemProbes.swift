@@ -371,3 +371,95 @@ public struct AppInventoryProbe: Probe {
         return result(.info, "\(apps.count) applications installed", metrics: metrics)
     }
 }
+
+// MARK: - Third-party processes
+
+/// Lists the third-party apps resident in memory.
+///
+/// The host cannot get per-process energy attribution — that lives in the
+/// device's power log — but it can say what is *resident*, and for a drain
+/// investigation that is a useful lead.
+///
+/// An important caveat, stated in the output as well as here: iOS keeps
+/// recently-used apps in memory in a **suspended** state. A suspended app holds
+/// a process and appears in this list while consuming no CPU at all. So a long
+/// list is not by itself evidence of a drain — it is a shortlist of candidates
+/// to check against Settings › Battery, which is the only place per-app energy
+/// is actually attributed.
+///
+/// Third-party code is identified by path: installed apps live under
+/// `/private/var/containers/Bundle/Application/`, whereas system binaries come
+/// from the sealed system volume.
+public struct RunningAppsProbe: Probe {
+    public let id = "runtime.thirdparty"
+    public let title = "Third-party Processes"
+    public let section = ReportSection.stability
+    public let requiredCapabilities: Set<Capability> = [.processList]
+    public var appliesToSimulators: Bool { true }
+
+    public init() {}
+
+    public func run(device: DeviceSnapshot, router: TransportRouter) async throws -> ProbeResult {
+        let raw = try await router.fetch(.processes, for: device)
+        var list = raw.runningProcesses.array
+        if list.isEmpty { list = raw.search(forKey: "runningProcesses").array }
+
+        guard !list.isEmpty else {
+            return result(.unsupported, "Device returned no process list")
+        }
+
+        var thirdParty: [String] = []
+        var appExtensions: [String] = []
+
+        for process in list {
+            guard let path = process.firstPresent("executable", "path", "name").string
+            else { continue }
+
+            // Container-resident code is installed, not part of the OS.
+            guard path.contains("/containers/Bundle/Application/")
+                    || path.contains("/var/containers/Bundle/")
+            else { continue }
+
+            // Paths arrive percent-encoded, so "Auscult%20Agent" needs decoding.
+            let raw = (path as NSString).lastPathComponent
+            let name = raw.removingPercentEncoding ?? raw
+            // Extensions run on an app's behalf (widgets, keyboards, share
+            // sheets) and are a common source of background work.
+            if path.contains(".appex/") {
+                appExtensions.append(name)
+            } else {
+                thirdParty.append(name)
+            }
+        }
+
+        thirdParty = Array(Set(thirdParty)).sorted()
+        appExtensions = Array(Set(appExtensions)).sorted()
+
+        var metrics: [Metric] = [
+            .reading("total", "Total processes", .int(Int64(list.count))),
+            .reading("thirdPartyCount", "Third-party apps resident",
+                     .int(Int64(thirdParty.count)),
+                     note: "includes apps iOS is holding suspended, which use no CPU"),
+        ]
+        if !thirdParty.isEmpty {
+            metrics.append(.reading("thirdParty", "Apps in memory", .list(thirdParty),
+                note: "a shortlist to check against Settings › Battery — "
+                    + "residency alone does not mean an app is consuming power"))
+        }
+        if !appExtensions.isEmpty {
+            metrics.append(.reading("extensions", "App extensions resident",
+                .list(appExtensions),
+                note: "widgets, keyboards and notification handlers run on an app's behalf "
+                    + "and are woken by the system rather than by you"))
+        }
+
+        // Informational by design: a running app is not a fault, and the number
+        // that would justify a warning depends entirely on what the person was
+        // just doing with the phone.
+        let summary = thirdParty.isEmpty
+            ? "No third-party apps resident"
+            : "\(thirdParty.count) third-party app\(thirdParty.count == 1 ? "" : "s") "
+              + "and \(appExtensions.count) extension\(appExtensions.count == 1 ? "" : "s") resident"
+        return result(.info, summary, metrics: metrics)
+    }
+}

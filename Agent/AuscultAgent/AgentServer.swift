@@ -102,9 +102,10 @@ final class AgentServer {
             self.listener = listener
             listener.start(queue: queue)
 
-            // A diagnostic run must not be interrupted by the screen locking:
-            // the socket dies with the app's foreground state.
-            UIApplication.shared.isIdleTimerDisabled = true
+            // Deliberately NOT disabling the idle timer here. Holding the
+            // screen awake for the whole session costs a couple of watts on a
+            // large OLED, which would corrupt the very drain measurements this
+            // tool exists to take. It is enabled only while a test is running.
         } catch {
             state = .failed(error.localizedDescription)
             note("Could not listen: \(error.localizedDescription)", error: true)
@@ -117,7 +118,6 @@ final class AgentServer {
         listener?.cancel()
         connection = nil
         listener = nil
-        UIApplication.shared.isIdleTimerDisabled = false
         state = .idle
     }
 
@@ -260,6 +260,8 @@ final class AgentServer {
             await MainActor.run { [weak self] in
                 self?.state = .running(test: descriptor.title, fraction: 0, message: "Starting")
                 self?.note("Running \(descriptor.title)")
+                // Keep the screen alive for the duration of this test only.
+                UIApplication.shared.isIdleTimerDisabled = true
             }
 
             var result: AgentTestResult
@@ -289,7 +291,10 @@ final class AgentServer {
                     }
                 ))
             } catch is CancellationError {
-                await MainActor.run { [weak self] in self?.state = .connected(host: "Mac") }
+                await MainActor.run { [weak self] in
+                    UIApplication.shared.isIdleTimerDisabled = false
+                    self?.state = .connected(host: "Mac")
+                }
                 return
             } catch {
                 result = AgentTestResult(
@@ -303,6 +308,7 @@ final class AgentServer {
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                UIApplication.shared.isIdleTimerDisabled = false
                 self.lastResults.removeAll { $0.testID == result.testID }
                 self.lastResults.append(result)
                 self.userPrompt = nil

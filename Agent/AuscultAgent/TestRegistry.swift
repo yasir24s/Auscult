@@ -56,6 +56,11 @@ struct TestRegistry {
         StorageThroughputTest(),
         MemoryTest(),
         BiometricsTest(),
+        PowerContextTest(),
+        CameraTest(),
+        AudioLoopbackTest(),
+        BluetoothScanTest(),
+        LocationFixTest(),
         DeadPixelSweepTest(),
         TouchGridTest(),
     ]

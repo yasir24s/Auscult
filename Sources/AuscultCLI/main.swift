@@ -16,6 +16,8 @@ func usage() -> String {
 
     USAGE
       auscult doctor                    Show which data paths this host has
+      auscult drain [udid]              Controlled idle drain measurement
+                                        (--seconds N, --wait N to count down first)
       auscult agent [udid]              Connect to the on-device agent, list its tests
       auscult agent [udid] --test <id>  Run one on-device hardware test
       auscult usbmux                    Inspect the mux layer and pair records
@@ -52,7 +54,7 @@ func option(_ name: String) -> String? {
 /// Positional arguments only — anything not a flag or a flag's value.
 var positionals: [String] = []
 do {
-    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test"]
+    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test", "--seconds", "--wait"]
     var skipNext = false
     for a in args.dropFirst() {
         if skipNext { skipNext = false; continue }
@@ -186,6 +188,13 @@ case "run":
         rendered.append(try render(report))
     }
     try write(rendered.joined(separator: flag("--json") ? "\n" : "\n\n"))
+
+case "drain":
+    await runDrainCommand(
+        session: session, selector: positionals.first,
+        seconds: option("--seconds").flatMap(Double.init) ?? 60,
+        waitSeconds: option("--wait").flatMap(Double.init) ?? 0
+    )
 
 case "agent":
     await runAgentCommand(

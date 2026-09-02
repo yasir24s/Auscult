@@ -176,6 +176,19 @@ public actor TransportRouter {
         throw TransportError.malformedResponse(lastMessage)
     }
 
+    /// Fetch bypassing the response cache.
+    ///
+    /// Needed by anything that samples a value repeatedly over time: the cache
+    /// exists so several probes can share one expensive read, but a drain
+    /// measurement that polls the gas gauge would otherwise get the same
+    /// reading twenty times and conclude the current never changes.
+    public func fetchFresh(
+        _ request: TransportRequest, for device: DeviceSnapshot
+    ) async throws -> DynamicValue {
+        responseCache.removeValue(forKey: CacheKey(device: device.id, request: request))
+        return try await fetch(request, for: device)
+    }
+
     /// Fetch without throwing — probes usually want "absent" not a failure.
     public func tryFetch(
         _ request: TransportRequest, for device: DeviceSnapshot

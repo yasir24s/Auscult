@@ -16,7 +16,10 @@
 		649BB66BC4020850D750F05C /* InteractiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457A219AE585E7152A3856A4 /* InteractiveTests.swift */; };
 		849E5B0B558E3AEED212CA55 /* Wire.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4314E01B7763B3599B26A321 /* Wire.swift */; };
 		88BFFAD17030C17E56A475D4 /* TouchGridOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F537623E58BC7EC585199DBC /* TouchGridOverlay.swift */; };
+		9FC1F222F3EB5781BF89FBF5 /* AudioTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECED596F64B4F4E879E5F553 /* AudioTests.swift */; };
+		A86A9D8D4124A8ECEBCC1081 /* CameraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B03DB9737ED1AF491B6F3D1 /* CameraTests.swift */; };
 		C03611A6A9550F395C499470 /* TestRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D963A0C1E456197E57BA61D /* TestRegistry.swift */; };
+		C6CCE2B1906E89772538C3F0 /* RadioLocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B5CAF980B3B4C61564DBE94 /* RadioLocationTests.swift */; };
 		D0731842646DF9DF80E63596 /* SystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CAE8AE6D0611318C7CF4558 /* SystemTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -28,9 +31,12 @@
 		4314E01B7763B3599B26A321 /* Wire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wire.swift; sourceTree = "<group>"; };
 		457A219AE585E7152A3856A4 /* InteractiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteractiveTests.swift; sourceTree = "<group>"; };
 		4B61E9484AA7D4BE4AAB6130 /* AuscultAgent.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AuscultAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5B03DB9737ED1AF491B6F3D1 /* CameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTests.swift; sourceTree = "<group>"; };
+		5B5CAF980B3B4C61564DBE94 /* RadioLocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadioLocationTests.swift; sourceTree = "<group>"; };
 		8CAE8AE6D0611318C7CF4558 /* SystemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemTests.swift; sourceTree = "<group>"; };
 		8E35E86EEA96B72BE3BC414E /* Messages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Messages.swift; sourceTree = "<group>"; };
 		D296D661807739F1237935A3 /* MotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionTests.swift; sourceTree = "<group>"; };
+		ECED596F64B4F4E879E5F553 /* AudioTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTests.swift; sourceTree = "<group>"; };
 		F0B40605B7E2E23CA03F6F83 /* AgentRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRootView.swift; sourceTree = "<group>"; };
 		F537623E58BC7EC585199DBC /* TouchGridOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchGridOverlay.swift; sourceTree = "<group>"; };
 		F5E64A2435074CA6982BDDF6 /* AgentServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentServer.swift; sourceTree = "<group>"; };
@@ -98,8 +104,11 @@
 		D1A08F08C32F7C1B2AE85C15 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				ECED596F64B4F4E879E5F553 /* AudioTests.swift */,
+				5B03DB9737ED1AF491B6F3D1 /* CameraTests.swift */,
 				457A219AE585E7152A3856A4 /* InteractiveTests.swift */,
 				D296D661807739F1237935A3 /* MotionTests.swift */,
+				5B5CAF980B3B4C61564DBE94 /* RadioLocationTests.swift */,
 				8CAE8AE6D0611318C7CF4558 /* SystemTests.swift */,
 			);
 			path = Tests;
@@ -175,10 +184,13 @@
 				409C1C59F4B9294205184354 /* AgentApp.swift in Sources */,
 				5AADD1CF08A12242AFE99097 /* AgentRootView.swift in Sources */,
 				2757EDE280C951D50383B4BB /* AgentServer.swift in Sources */,
+				9FC1F222F3EB5781BF89FBF5 /* AudioTests.swift in Sources */,
+				A86A9D8D4124A8ECEBCC1081 /* CameraTests.swift in Sources */,
 				5211862CC6FE7729F47B5980 /* InteractionCoordinator.swift in Sources */,
 				649BB66BC4020850D750F05C /* InteractiveTests.swift in Sources */,
 				3434B7692D7FEBEDB391A9CA /* Messages.swift in Sources */,
 				32A3090DBC77A4F9DCD721B2 /* MotionTests.swift in Sources */,
+				C6CCE2B1906E89772538C3F0 /* RadioLocationTests.swift in Sources */,
 				D0731842646DF9DF80E63596 /* SystemTests.swift in Sources */,
 				C03611A6A9550F395C499470 /* TestRegistry.swift in Sources */,
 				88BFFAD17030C17E56A475D4 /* TouchGridOverlay.swift in Sources */,
