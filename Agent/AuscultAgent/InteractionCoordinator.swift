@@ -58,6 +58,7 @@ final class InteractionCoordinator {
     /// Called by the view as cells are touched.
     func registerTouch(row: Int, column: Int, maxSimultaneous: Int) {
         guard case .touchGrid(var grid) = mode else { return }
+        grid.rawEvents += 1
         grid.touched.insert(TouchGrid.Cell(row: row, column: column))
         grid.maxSimultaneousTouches = max(grid.maxSimultaneousTouches, maxSimultaneous)
         mode = .touchGrid(grid)
@@ -111,6 +112,10 @@ struct TouchGrid: Equatable {
     var columns: Int
     var touched: Set<Cell> = []
     var maxSimultaneousTouches: Int = 0
+    /// Raw touch callbacks received, regardless of where they landed.
+    /// Zero here means the capture view never saw the finger at all, which is a
+    /// layout problem on our side rather than a fault in the digitizer.
+    var rawEvents: Int = 0
     var deadline: Date = .distantFuture
 
     var total: Int { rows * columns }

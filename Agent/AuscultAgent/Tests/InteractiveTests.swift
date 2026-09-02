@@ -135,6 +135,11 @@ struct TouchGridTest: AgentTest {
                     note: "every cell must register at least one touch",
                     expectation: "100%"),
             .number("cells", "Cells tested", Double(grid.total)),
+            .number("rawEvents", "Raw touch events seen", Double(grid.rawEvents),
+                    note: grid.rawEvents == 0
+                        ? "the capture view received no touches at all — this points at "
+                          + "the agent's own layout, not the digitizer"
+                        : nil),
         ]
 
         if !grid.missed.isEmpty {
@@ -144,13 +149,27 @@ struct TouchGridTest: AgentTest {
         }
 
         if grid.maxSimultaneousTouches > 0 {
-            // iOS reports up to 5 on iPhone, 11 on iPad.
-            metrics.append(.number("multitouch", "Maximum simultaneous touches",
-                                   Double(grid.maxSimultaneousTouches),
-                                   note: "as many fingers as were seen at once"))
+            // iOS reports up to 5 concurrent touches on iPhone and 11 on iPad,
+            // but this only counts what was actually offered. Tracing with one
+            // finger legitimately yields 1, so it is stated as an observation
+            // rather than a capability — otherwise "1" reads as broken
+            // multitouch on a perfectly good panel.
+            let n = grid.maxSimultaneousTouches
+            metrics.append(.number(
+                "multitouch", "Most fingers seen at once", Double(n),
+                note: n >= 2
+                    ? "multiple simultaneous touches tracked correctly"
+                    : "only one finger was used, so multitouch was not exercised"
+            ))
         }
 
         let verdict = rollup(metrics)
+        // Distinguish a dead digitizer from a test that never received input.
+        if grid.rawEvents == 0 {
+            return result(.skipped,
+                "No touches reached the test — nothing was traced, or the overlay did not accept input",
+                metrics: metrics)
+        }
         let summary = grid.isComplete
             ? "All \(grid.total) cells responded"
             : "\(grid.missed.count) of \(grid.total) cells never registered a touch"

@@ -163,6 +163,16 @@ case "run":
     }
 
     let quiet = flag("--json") || flag("--csv")
+    if flag("--guided") && !quiet {
+        // The automated tests run first and take a couple of minutes, so
+        // without this the prompts arrive long after the operator has looked
+        // away — and an unanswered guided test is wasted coverage.
+        warn("""
+        Guided tests are enabled: stay with the device. After the automated
+        checks you will be asked to inspect five colour fields and trace the
+        screen. Prompts appear on the device itself.
+        """)
+    }
     var rendered: [String] = []
     for device in targets {
         if !quiet { warn("Diagnosing \(device.displayName)…") }

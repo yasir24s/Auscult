@@ -30,29 +30,38 @@ struct TouchGridOverlay: View {
                 }
                 .ignoresSafeArea()
 
-                // The actual touch capture sits on top of the visuals.
+                // The capture view sits above the visuals and must be given an
+                // explicit full-screen frame: a plain UIView has no intrinsic
+                // content size, so SwiftUI can lay it out at zero and then no
+                // touch ever reaches it — which reads as a completely dead
+                // digitizer.
                 MultiTouchSurface(rows: grid.rows, columns: grid.columns) { row, col, simultaneous in
                     coordinator.registerTouch(row: row, column: col, maxSimultaneous: simultaneous)
                 }
+                .frame(width: geo.size.width, height: geo.size.height)
                 .ignoresSafeArea()
 
-                VStack {
+                // Only the Finish button may take touches; everything else in
+                // this layer must let them through to the capture view beneath.
+                VStack(spacing: 4) {
                     HStack {
                         Text("\(grid.touched.count) / \(grid.total)")
                             .font(.headline.monospacedDigit())
+                            .foregroundStyle(.white)
+                            .allowsHitTesting(false)
                         Spacer()
                         Button("Finish") { coordinator.finishTouchGrid() }
                             .buttonStyle(.borderedProminent)
                     }
                     .padding(.horizontal, 20)
-                    .padding(.top, 8)
 
                     Text("Drag a finger over every square")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.7))
-                    Spacer()
+                        .allowsHitTesting(false)
+                    Spacer(minLength: 0)
                 }
-                .padding(.top, geo.safeAreaInsets.top)
+                .padding(.top, geo.safeAreaInsets.top + 6)
             }
         }
         .persistentSystemOverlays(.hidden)
