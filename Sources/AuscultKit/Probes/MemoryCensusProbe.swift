@@ -29,11 +29,25 @@ public struct MemoryCensusProbe: Probe {
                 "No readable memory snapshot — requires a jetsam report on the device")
         }
 
+        // The census is historical, not live. Its age is itself informative:
+        // no new jetsam report means iOS has not had to kill anything since,
+        // which is the outcome you want after freeing memory.
+        let age = census.date.map { Date().timeIntervalSince($0) }
+        let ageNote: String = {
+            guard let age else { return "captured when iOS last killed a process for memory" }
+            let hours = age / 3600
+            let stamp = hours < 1
+                ? "\(Int(age / 60)) minutes ago"
+                : (hours < 48 ? "\(hours.oneDecimal) hours ago" : "\((hours / 24).oneDecimal) days ago")
+            return "captured \(stamp), when iOS last killed a process for memory — "
+                + "nothing since means no further kills have been needed"
+        }()
+
         var metrics: [Metric] = [
             .reading("snapshotAt", "Snapshot taken",
                 .string(census.date.map { $0.formatted(date: .abbreviated, time: .shortened) }
                     ?? "unknown"),
-                note: "captured at the moment iOS last killed a process for memory"),
+                note: ageNote),
             .reading("processCount", "Processes resident",
                      .int(Int64(census.processes.count))),
         ]

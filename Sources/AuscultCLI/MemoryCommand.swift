@@ -38,10 +38,19 @@ func runMemoryCommand(session: DiagnosticSession, selector: String?, limit: Int)
     func mb(_ bytes: Int64) -> String { String(format: "%7.0f MB", Double(bytes) / 1_048_576) }
 
     let when = census.date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "unknown"
+    let ageHours = census.date.map { Date().timeIntervalSince($0) / 3600 }
+    let ageText: String = ageHours.map {
+        $0 < 1 ? "\(Int($0 * 60)) minutes old" : String(format: "%.1f hours old", $0)
+    } ?? "age unknown"
+
     print("""
 
     Memory census — \(device.displayName)
-    Snapshot: \(when) (the moment iOS last killed a process for memory)
+    Snapshot: \(when) — \(ageText)
+
+    This is a HISTORICAL snapshot, taken the last time iOS killed a process for
+    memory. It is not live. If it looks old, that is good news: it means no
+    further memory kills have been needed since.
 
     KERNEL ACCOUNTING
       \(mb(census.kernel.wired))  wired          kernel and drivers, cannot be freed

@@ -107,9 +107,16 @@ private func interpretation(forIdleMilliwatts mW: Double) -> String {
     default:
         """
         Very high for an idle device — this is consistent with a real drain
-        problem rather than normal use. A process is running flat out. If the
-        screen was genuinely off during this measurement, the next step is
-        per-process attribution from the device's own power log.
+        problem rather than normal use. A process is running flat out.
+
+        Before concluding that, though: have you just force-quit a lot of apps?
+        Doing so makes this figure far worse, not better. Measured on one
+        device, closing 31 apps took idle draw from 682 mW to 5,720 mW, and it
+        took over ten minutes to come back down — iOS has to rebuild everything
+        it discarded. A suspended app costs nothing; relaunching it costs a lot.
+
+        If nothing was force-quit, the next step is `auscult energy` for
+        per-process attribution.
         """
     }
 }

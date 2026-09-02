@@ -230,6 +230,32 @@ The display is reported separately from the other assertions rather than ranked
 alongside them, because at 2–3 W whenever lit it dwarfs everything else and
 would otherwise bury the interesting entries.
 
+### Force-quitting apps makes drain worse — measured
+
+Widely-repeated advice, and this tool disproves it with numbers. On the test
+device, with the display off and charging paused throughout:
+
+| State | Idle system load |
+|---|---|
+| Baseline | **682 mW** |
+| Immediately after force-quitting 31 apps | **5,720 mW** (peak 11.4 W) |
+| 5 minutes later | 2,388 mW |
+| 10 minutes later | *see below* |
+
+Only 7 of the 33 apps came back, so the elevated draw was not the apps
+returning — it was iOS rebuilding the state it had just been made to discard:
+Spotlight re-indexing, widgets re-rendering, caches and on-device models
+re-warming. Load was high enough that the battery **discharged while plugged
+in**, because system draw exceeded what the paused charger supplied.
+
+A suspended app holds RAM but uses no CPU. Terminating it converts a free
+resource into an expensive one. The lever that actually helps is Background App
+Refresh, which governs whether an app gets *woken*.
+
+The `drain` command says this in its interpretation, because a user who has
+just closed everything and then measures will otherwise draw exactly the wrong
+conclusion.
+
 ### Where the RAM went
 
 Jetsam reports carry a complete process table captured at the moment iOS killed

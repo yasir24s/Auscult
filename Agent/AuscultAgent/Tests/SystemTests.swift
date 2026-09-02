@@ -552,8 +552,14 @@ struct MemoryTest: AgentTest {
                     Double(ProcessInfo.processInfo.activeProcessorCount)),
         ]
         if availableToApp > 0 {
-            metrics.append(.bytes("appAvailable", "Available to this app", availableToApp,
-                                  note: "headroom before the app is jetsammed"))
+            // This is a per-process jetsam allowance, NOT system free memory.
+            // It barely moves when the device is under pressure, so it must not
+            // be read as one — an earlier version of this note invited exactly
+            // that mistake.
+            metrics.append(.bytes("appAvailable", "This app's memory allowance",
+                                  availableToApp,
+                                  note: "per-process jetsam limit, not system free memory — "
+                                      + "it does not indicate device-wide pressure"))
         }
         if let pageSize = DeviceFacts.sysctlInt("hw.pagesize") {
             metrics.append(.number("pageSize", "Page size", Double(pageSize), unit: "bytes"))
