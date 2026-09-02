@@ -171,6 +171,7 @@ public struct LiveDrainProbe: Probe {
         var systemLoadMilliwatts: Double?
         var percent: Double?
         var externalConnected: Bool
+        var isCharging: Bool
         /// Signed: positive into the battery, negative out of it.
         var batteryMilliwatts: Double { milliamps * millivolts / 1000 }
     }
@@ -208,7 +209,8 @@ public struct LiveDrainProbe: Probe {
                     systemLoadMilliwatts: value("SystemLoad"),
                     percent: value("CurrentCapacity"),
                     externalConnected: (value("ExternalConnected")
-                        ?? value("AppleRawExternalConnected") ?? 0) != 0
+                        ?? value("AppleRawExternalConnected") ?? 0) != 0,
+                    isCharging: (value("IsCharging") ?? 0) != 0
                 ))
             }
             if index < sampleCount - 1 {
@@ -232,11 +234,28 @@ public struct LiveDrainProbe: Probe {
         let screenOff = (nitsBefore ?? 1) == 0 && (nitsAfter ?? 1) == 0
 
         let plugged = samples.filter(\.externalConnected).count > samples.count / 2
+        // Active charging inflates SystemLoad substantially — the charging
+        // circuitry's own consumption lands in the same figure. Measured on one
+        // device: 4748 mW while charging versus 1380 mW with charging paused at
+        // 95%, both with the display off. So the charging state decides whether
+        // this reading can be taken at face value.
+        let charging = samples.filter(\.isCharging).count > samples.count / 4
         var metrics: [Metric] = [
             .reading("sampled", "Samples taken",
                 .string("\(samples.count) over \(Int(Double(samples.count) * interval))s")),
             .reading("onCharger", "On the charger", .bool(plugged)),
         ]
+        if plugged {
+            metrics.append(Metric(
+                id: "chargingState", label: "Charging during measurement",
+                value: .bool(charging),
+                verdict: charging ? .warn : .pass,
+                note: charging
+                    ? "the charging circuit's own consumption is included below, inflating it — "
+                      + "measure again near 100% when charging pauses, or unplugged"
+                    : "charging is paused, so this is the device's own consumption"
+            ))
+        }
         if duringDiagnosticRun {
             metrics.append(.reading("measurementContext", "Measurement conditions",
                 .string("taken during a diagnostic run"),
@@ -261,11 +280,15 @@ public struct LiveDrainProbe: Probe {
             // every healthy phone; with it dark, several watts is the finding.
             metrics.append(.graded(
                 "meanSystemLoad", "Mean system load", meanLoad, unit: "mW",
-                warnAt: screenOff ? (duringDiagnosticRun ? 2500 : 600) : 3000,
-                failAt: screenOff ? (duringDiagnosticRun ? 5000 : 1200) : 5000,
+                // Strict thresholds only when the reading is clean: display
+                // off, charging paused, and no diagnostic load.
+                warnAt: screenOff ? (duringDiagnosticRun || charging ? 2500 : 600) : 3000,
+                failAt: screenOff ? (duringDiagnosticRun || charging ? 5000 : 1200) : 5000,
                 higherIsBetter: false,
                 note: screenOff
-                    ? "display off, so this is what the device consumes doing nothing"
+                    ? (charging
+                        ? "display off, but charging inflates this — re-measure with charging paused"
+                        : "display off and not charging, so this is what the device consumes doing nothing")
                     : "display on, so most of this is the panel",
                 expectation: screenOff
                     ? "an idle device with the screen off sits under 400 mW"
