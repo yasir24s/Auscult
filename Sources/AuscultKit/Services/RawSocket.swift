@@ -101,6 +101,17 @@ final class RawSocket: ByteStream {
         return out
     }
 
+    /// Change the read timeout after construction. Guided agent tests can sit
+    /// for a minute waiting on a person, which is not a stalled connection.
+    func setReadTimeout(_ seconds: TimeInterval) {
+        guard fd >= 0 else { return }
+        var tv = timeval(
+            tv_sec: Int(seconds),
+            tv_usec: Int32((seconds - Double(Int(seconds))) * 1_000_000)
+        )
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    }
+
     /// Hand the descriptor to a caller that will take over lifetime.
     func detach() -> Int32 {
         let taken = fd

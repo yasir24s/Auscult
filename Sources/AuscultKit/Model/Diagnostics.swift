@@ -93,12 +93,24 @@ public enum MetricValue: Codable, Sendable, Hashable, CustomStringConvertible {
         switch self {
         case .string(let s): s
         case .int(let i): i.formatted(.number)
-        case .double(let d): d.formatted(.number.precision(.fractionLength(0...2)))
+        case .double(let d): Self.formatDouble(d)
         case .bool(let b): b ? "yes" : "no"
         case .bytes(let b): ByteCountFormatter.string(fromByteCount: b, countStyle: .file)
         case .list(let l): l.isEmpty ? "none" : l.joined(separator: ", ")
         case .absent: "—"
         }
+    }
+
+    /// Format without collapsing small magnitudes to "0" — a sensor noise
+    /// floor of 4e-4 must not print as zero, which would read as a dead sensor.
+    static func formatDouble(_ d: Double) -> String {
+        // `Int(_:)` traps on infinity and NaN, so guard before converting.
+        guard d.isFinite else { return d.isNaN ? "not a number" : (d > 0 ? "∞" : "-∞") }
+        if d == d.rounded() { return String(Int(d)) }
+        let magnitude = abs(d)
+        if magnitude < 0.001 { return String(format: "%.5f", d) }
+        if magnitude < 0.1 { return String(format: "%.4f", d) }
+        return d.formatted(.number.precision(.fractionLength(0...2)))
     }
 
     // Compact single-key encoding keeps the JSON readable by other tools.

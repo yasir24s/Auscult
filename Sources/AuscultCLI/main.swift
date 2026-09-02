@@ -16,6 +16,8 @@ func usage() -> String {
 
     USAGE
       auscult doctor                    Show which data paths this host has
+      auscult agent [udid]              Connect to the on-device agent, list its tests
+      auscult agent [udid] --test <id>  Run one on-device hardware test
       auscult usbmux                    Inspect the mux layer and pair records
       auscult pairtest <file>           Verify a pair record builds a TLS identity
       auscult relay [udid]              Trace the deep lockdown handshake step by step
@@ -35,6 +37,8 @@ func usage() -> String {
       --out <path>      Write the report to a file instead of stdout
       --all             With `run`, diagnose every visible device
       --include-sims    Don't filter out simulators
+      --guided          Include tests needing someone at the device
+      --no-agent        Skip on-device hardware tests entirely
       --no-color        Disable ANSI colour
     """
 }
@@ -48,7 +52,7 @@ func option(_ name: String) -> String? {
 /// Positional arguments only — anything not a flag or a flag's value.
 var positionals: [String] = []
 do {
-    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class"]
+    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test"]
     var skipNext = false
     for a in args.dropFirst() {
         if skipNext { skipNext = false; continue }
@@ -162,12 +166,22 @@ case "run":
     var rendered: [String] = []
     for device in targets {
         if !quiet { warn("Diagnosing \(device.displayName)…") }
-        let report = await session.run(device) { p in
+        let report = await session.run(
+            device,
+            includeAgent: !flag("--no-agent"),
+            includeInteractive: flag("--guided")
+        ) { p in
             if !quiet { warn("  [\(p.completed)/\(p.total)] \(p.currentTitle)") }
         }
         rendered.append(try render(report))
     }
     try write(rendered.joined(separator: flag("--json") ? "\n" : "\n\n"))
+
+case "agent":
+    await runAgentCommand(
+        session: session, selector: positionals.first,
+        testID: option("--test"), listOnly: !flag("--test") && option("--test") == nil
+    )
 
 case "usbmux":
     await runUsbmuxDiagnostic()

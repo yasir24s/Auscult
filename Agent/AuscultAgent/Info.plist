@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>       <string>en</string>
+    <key>CFBundleExecutable</key>              <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>              <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>   <string>6.0</string>
+    <key>CFBundleName</key>                    <string>$(PRODUCT_NAME)</string>
+    <key>CFBundlePackageType</key>             <string>APPL</string>
+    <key>CFBundleShortVersionString</key>      <string>$(MARKETING_VERSION)</string>
+    <key>CFBundleVersion</key>                 <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>LSRequiresIPhoneOS</key>              <true/>
+    <key>UILaunchScreen</key>                  <dict/>
+    <key>UIApplicationSupportsIndirectInputEvents</key> <true/>
+
+    <!-- Diagnostics need every orientation: the display sweep and the motion
+         tests both depend on being able to rotate the device. -->
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationPortraitUpsideDown</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- Purpose strings for the permission-gated tests. iOS terminates the app
+         if a framework is touched without its string present, so they are
+         declared up front even though those tests land in a later phase. -->
+    <key>NSCameraUsageDescription</key>
+    <string>Auscult captures a frame from each camera to verify the sensor and lens are working.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Auscult records a test tone played through the speaker to verify both the speaker and the microphones.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Auscult measures how long the GPS receiver takes to acquire a position fix.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Auscult scans for nearby devices to verify the Bluetooth radio is transmitting and receiving.</string>
+    <key>NSMotionUsageDescription</key>
+    <string>Auscult reads the accelerometer, gyroscope, magnetometer and barometer to verify each sensor.</string>
+</dict>
+</plist>
