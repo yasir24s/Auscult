@@ -27,6 +27,7 @@ public struct ProbeEngine: Sendable {
             RuntimeProbe(),
             RunningAppsProbe(),
             StabilityHistoryProbe(),
+            MemoryPressureProbe(),
             AppInventoryProbe(),
         ]
     }
