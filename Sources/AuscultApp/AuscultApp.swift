@@ -16,7 +16,7 @@ struct AuscultApp: App {
                     // exercised without a human clicking the button.
                     if ProcessInfo.processInfo.environment["AUSCULT_AUTORUN"] == "1",
                        let d = model.selectedDevice {
-                        model.runDiagnostics(on: d)
+                        model.runDiagnostics(on: d, force: false)
                     }
                 }
                 .frame(minWidth: 940, minHeight: 620)

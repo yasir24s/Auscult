@@ -139,6 +139,8 @@ public actor TransportRouter {
             }
         }
 
+        try Task.checkCancellation()
+
         let cap = request.requiredCapability
         let map = await capabilityMap(for: device)
         guard map[cap] != nil else {
@@ -159,10 +161,17 @@ public actor TransportRouter {
                 let value = try await t.fetch(request, for: device)
                 responseCache[key] = .success(value)
                 return value
+            } catch is CancellationError {
+                // Cancellation says nothing about the device — it means *we*
+                // went away. Propagate it untouched and cache nothing, or a
+                // superseded run would poison every later one.
+                throw CancellationError()
             } catch {
                 lastMessage = "\(t.displayName): \(error.localizedDescription)"
             }
         }
+        // Only genuine failures are cached, and only so that an expensive dead
+        // end (cfgutil costs ~10s per call) isn't retried by every probe.
         responseCache[key] = .failure(TransportErrorBox(message: lastMessage))
         throw TransportError.malformedResponse(lastMessage)
     }

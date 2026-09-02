@@ -93,11 +93,20 @@ final class AppModel {
 
     // MARK: Running
 
-    func runDiagnostics(on device: DeviceSnapshot) {
+    func runDiagnostics(on device: DeviceSnapshot, force: Bool = true) {
+        // Idempotent entry points (the autorun hook, a repeated `.task`) pass
+        // force: false so they can't restart a run that's already going.
+        if !force && runState.isRunning { return }
         runTask?.cancel()
         runState = .running(progress: 0, label: "Preparing")
         runTask = Task { [weak self] in
             guard let self else { return }
+            // A task cancelled before its body was scheduled must not proceed.
+            // SwiftUI can run a `.task` modifier more than once, so a second
+            // call to this method cancels the first task while it is still
+            // queued — and without this check that dead task would run anyway,
+            // failing every subprocess and polluting shared caches.
+            guard !Task.isCancelled else { return }
             let report = await session.run(device) { progress in
                 Task { @MainActor [weak self] in
                     guard self?.runState.isRunning == true else { return }
@@ -109,6 +118,14 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             reports[device.id] = report
             runState = .finished
+
+            // Dev hook: with AUSCULT_AUTORUN set, dump the full report so a
+            // GUI-only failure can be inspected outside the UI.
+            if ProcessInfo.processInfo.environment["AUSCULT_AUTORUN"] == "1",
+               let data = try? report.jsonData() {
+                try? data.write(to: URL(fileURLWithPath: NSHomeDirectory())
+                    .appendingPathComponent("Auscult/build/autorun-report.json"))
+            }
         }
     }
 

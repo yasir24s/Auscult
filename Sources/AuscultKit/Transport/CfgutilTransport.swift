@@ -143,13 +143,18 @@ private actor PropertyCache {
         var selector: [String] = []
         if let ecid = device.ecid { selector = ["--ecid", ecid] }
 
-        let result = try? await Shell.run(
-            cfgutil,
-            ["--format", "JSON"] + selector + ["get"] + CfgutilTransport.standardProperties,
-            timeout: 90
-        )
-        guard let result else {
-            let why = "cfgutil did not return within 90s"
+        let result: ShellResult
+        do {
+            result = try await Shell.run(
+                cfgutil,
+                ["--format", "JSON"] + selector + ["get"] + CfgutilTransport.standardProperties,
+                timeout: 90
+            )
+        } catch is CancellationError {
+            // Don't record this as a device failure — nothing was learned.
+            throw CancellationError()
+        } catch {
+            let why = error.localizedDescription
             failed[device.id] = why
             throw TransportError.malformedResponse(why)
         }
