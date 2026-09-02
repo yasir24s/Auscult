@@ -222,10 +222,14 @@ struct LocationFixTest: AgentTest {
         var metrics: [AgentMetric] = []
 
         guard let fix = outcome.best else {
+            // Genuinely ambiguous: a phone indoors with no sky view often
+            // cannot fix, and the agent has no way to know where it is. Calling
+            // that a hardware failure would be wrong most of the time.
             metrics.append(.flag("fixAcquired", "Fix acquired", false,
-                                 shouldBe: true, severityIfNot: .fail,
-                                 note: "no position in 30 s — indoors this is common, "
-                                     + "but outdoors it points at the GNSS antenna"))
+                                 shouldBe: true, severityIfNot: .warn,
+                                 note: "no position in 30 s — normal indoors; "
+                                     + "re-run outdoors with a clear view of the sky, and if it "
+                                     + "still fails the GNSS antenna is the suspect"))
             if let error = outcome.errorDescription {
                 metrics.append(.reading("error", "Reported error", error))
             }

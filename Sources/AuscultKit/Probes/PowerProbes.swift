@@ -223,6 +223,10 @@ public struct LiveDrainProbe: Probe {
         }
 
         let nitsAfter = await Self.currentNits(device: device, router: router)
+        // Inside a full run the agent is foregrounded and other probes are
+        // exercising the CPU, GPU and radios, which inflates this considerably.
+        // Say so, and point at the command that measures properly.
+        let duringDiagnosticRun = await router.has(.agentLink, for: device)
         // Screen off for the whole window is the only case where the strict
         // idle thresholds apply.
         let screenOff = (nitsBefore ?? 1) == 0 && (nitsAfter ?? 1) == 0
@@ -233,6 +237,12 @@ public struct LiveDrainProbe: Probe {
                 .string("\(samples.count) over \(Int(Double(samples.count) * interval))s")),
             .reading("onCharger", "On the charger", .bool(plugged)),
         ]
+        if duringDiagnosticRun {
+            metrics.append(.reading("measurementContext", "Measurement conditions",
+                .string("taken during a diagnostic run"),
+                note: "other tests were loading the device, so this reads high — "
+                    + "use `auscult drain` with the agent closed for a clean figure"))
+        }
         if let nits = nitsAfter {
             metrics.append(.reading("screenState", "Display during measurement",
                 .string(screenOff ? "off" : "on (\(nits.zeroDecimal) nits)"),
@@ -251,8 +261,8 @@ public struct LiveDrainProbe: Probe {
             // every healthy phone; with it dark, several watts is the finding.
             metrics.append(.graded(
                 "meanSystemLoad", "Mean system load", meanLoad, unit: "mW",
-                warnAt: screenOff ? 600 : 3000,
-                failAt: screenOff ? 1200 : 5000,
+                warnAt: screenOff ? (duringDiagnosticRun ? 2500 : 600) : 3000,
+                failAt: screenOff ? (duringDiagnosticRun ? 5000 : 1200) : 5000,
                 higherIsBetter: false,
                 note: screenOff
                     ? "display off, so this is what the device consumes doing nothing"
