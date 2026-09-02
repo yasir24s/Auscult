@@ -435,6 +435,20 @@ public struct RunningAppsProbe: Probe {
         thirdParty = Array(Set(thirdParty)).sorted()
         appExtensions = Array(Set(appExtensions)).sorted()
 
+        // Some classes of app are persistent *by design* and so cost power
+        // continuously rather than occasionally. A VPN holds a network
+        // extension up permanently; a location-sharing app keeps locationd
+        // running. These are worth naming separately because the remedy is
+        // different: you cannot fix them with Background App Refresh, only by
+        // removing or reconfiguring the app.
+        let persistentPatterns = [
+            "vpn", "hotspotshield", "proton", "wireguard", "openvpn", "tunnel",
+            "life360", "find", "tile", "adblock", "dns",
+        ]
+        let persistent = (thirdParty + appExtensions).filter { name in
+            persistentPatterns.contains { name.localizedCaseInsensitiveContains($0) }
+        }.sorted()
+
         var metrics: [Metric] = [
             .reading("total", "Total processes", .int(Int64(list.count))),
             .reading("thirdPartyCount", "Third-party apps resident",
@@ -445,6 +459,16 @@ public struct RunningAppsProbe: Probe {
             metrics.append(.reading("thirdParty", "Apps in memory", .list(thirdParty),
                 note: "a shortlist to check against Settings › Battery — "
                     + "residency alone does not mean an app is consuming power"))
+        }
+        if !persistent.isEmpty {
+            metrics.append(Metric(
+                id: "persistent", label: "Continuously-running app classes",
+                value: .list(persistent),
+                verdict: persistent.count >= 2 ? .warn : .info,
+                note: "VPNs, location sharing and content blockers hold system "
+                    + "extensions up permanently — Background App Refresh does not "
+                    + "affect them. Two VPNs is one more than any device needs."
+            ))
         }
         if !appExtensions.isEmpty {
             metrics.append(.reading("extensions", "App extensions resident",
