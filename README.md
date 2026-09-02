@@ -206,11 +206,46 @@ The report also derives the PMU's accumulators: mean draw during the periods the
 device was on battery, mean system load since boot, charger conversion loss, and
 a projected runtime from pack energy divided by measured draw.
 
-What it cannot do is attribute energy to a process — iOS keeps that in its power
-log. So `RunningAppsProbe` lists third-party residency as a *shortlist*, stated
-carefully: iOS holds recently-used apps suspended in memory, so residency is not
-evidence of consumption. Settings › Battery remains the authority on per-app
-energy.
+### Naming the culprit
+
+iOS exposes no per-process energy API to third parties. The real numbers live in
+`CurrentPowerlog.PLSQL`, which only ships inside a sysdiagnose — and
+`devicectl device sysdiagnose` wants interactive consent on a TTY.
+
+But there is a better source that needs nothing but a directory listing. iOS
+writes a report every time a process exceeds a resource limit — sustained CPU,
+excessive disk writes, too many wakeups — and **names the file after the
+culprit**. The `systemCrashLogs` domain exposes those, so counting and weighting
+them attributes misbehaviour to specific apps.
+
+```bash
+auscult energy                      # ranked offenders
+auscult energy --detail Twitter     # every report, with the numbers
+```
+
+CPU-exhaustion reports carry the strongest signal, because iOS only writes one
+when a process held high CPU for minutes:
+
+```
+27 reports  Twitter  27 × cpu exhaustion
+    detail: 90 seconds cpu time over 99 seconds (91% cpu average),
+            exceeding limit of 50% cpu over 180 seconds
+```
+
+Kinds are weighted rather than summed — a minute of pegged CPU costs far more
+energy than a burst of disk writes — and the output states plainly that this is
+evidence of misbehaviour rather than a direct measurement, with Settings ›
+Battery as the authority.
+
+Two attribution traps worth knowing: jetsam reports are named `JetsamEvent-…`
+for the *event*, not the process that died, so ranking on the filename invents a
+process called "JetsamEvent"; and totals from opened reports must say how many
+were opened, or "450 s of CPU" reads as the whole history when it is five
+episodes of twenty-seven.
+
+`RunningAppsProbe` complements this with third-party residency, stated equally
+carefully: iOS holds recently-used apps suspended in memory, so residency alone
+is not evidence of consumption.
 
 ### Guided tests never guess
 
@@ -266,16 +301,6 @@ Worth recording, because none was visible in a simulator:
 
 ## Roadmap
 
-**Phase 4 — per-app energy attribution.** The device's own power log
-(`CurrentPowerlog.PLSQL`) is the only place iOS attributes energy per process.
-It ships inside a sysdiagnose, but `devicectl device sysdiagnose` requires
-interactive consent on a TTY, so capturing it needs either a pty or the
-`crashreportcopymobile` service. Until then the drain workflow narrows the
-candidates and Settings › Battery does the attribution.
-
-**Phase 5 — stability history.** Kernel panic and jetsam log retrieval via
-`com.apple.crashreportcopymobile`, parsed into a panic-cause timeline.
-
-**Phase 6 — baselines.** The CSV export exists so two runs of the same device
+**Phase 5 — baselines.** The CSV export exists so two runs of the same device
 can be diffed. Storing baselines turns "91.2% health" into "down 1.4 points in
 six weeks", which is the number that actually predicts a failure.

@@ -19,11 +19,13 @@ public struct ProbeEngine: Sendable {
             PowerTelemetryProbe(),
             PowerHistoryProbe(),
             LiveDrainProbe(),
+            EnergyAttributionProbe(),
             StorageProbe(),
             DisplayProbe(),
             RadioIdentityProbe(),
             RuntimeProbe(),
             RunningAppsProbe(),
+            StabilityHistoryProbe(),
             AppInventoryProbe(),
         ]
     }

@@ -16,6 +16,8 @@ func usage() -> String {
 
     USAGE
       auscult doctor                    Show which data paths this host has
+      auscult energy [udid]             Rank apps by iOS resource-limit reports
+      auscult energy --detail <name>    Everything known about one process
       auscult drain [udid]              Controlled idle drain measurement
                                         (--seconds N, --wait N to count down first)
       auscult agent [udid]              Connect to the on-device agent, list its tests
@@ -54,7 +56,7 @@ func option(_ name: String) -> String? {
 /// Positional arguments only — anything not a flag or a flag's value.
 var positionals: [String] = []
 do {
-    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test", "--seconds", "--wait"]
+    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test", "--seconds", "--wait", "--limit", "--detail"]
     var skipNext = false
     for a in args.dropFirst() {
         if skipNext { skipNext = false; continue }
@@ -188,6 +190,13 @@ case "run":
         rendered.append(try render(report))
     }
     try write(rendered.joined(separator: flag("--json") ? "\n" : "\n\n"))
+
+case "energy":
+    await runEnergyCommand(
+        session: session, selector: positionals.first,
+        limit: option("--limit").flatMap(Int.init) ?? 15,
+        detailFor: option("--detail")
+    )
 
 case "drain":
     await runDrainCommand(

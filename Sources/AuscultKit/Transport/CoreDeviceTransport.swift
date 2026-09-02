@@ -204,7 +204,7 @@ public struct CoreDeviceTransport: DeviceTransport {
         // Everything else needs a live connection to the device.
         guard device.isReachable else { return caps }
 
-        caps.formUnion([.displayInfo, .screenCapture, .sysdiagnose])
+        caps.formUnion([.displayInfo, .screenCapture, .sysdiagnose, .crashLogs])
 
         // The developer-disk-image services gate process listing and app
         // inventory. Ask rather than assume: on a fresh seed the DDI may still
@@ -255,9 +255,52 @@ public struct CoreDeviceTransport: DeviceTransport {
             return try await runJSON(
                 ["devicectl", "device", "info", "ddiServices", "--device", selector], timeout: 45
             ).result
+
+        case .crashLogIndex:
+            // The systemCrashLogs domain is iOS's own diagnostic directory:
+            // crash reports, jetsam events, and — the reason we want it —
+            // resource-exhaustion reports naming the process that misbehaved.
+            return try await runJSON([
+                "devicectl", "device", "info", "files", "--device", selector,
+                "--domain-type", "systemCrashLogs", "--recurse",
+            ], timeout: 180).result
+
+        case .crashLog(let name):
+            return try await copyCrashLog(named: name, selector: selector)
         default:
             throw TransportError.unsupportedRequest(request, transport: displayName)
         }
+    }
+
+    /// Copy one file out of the crash-log domain and return its text.
+    ///
+    /// Reports are plain text with a JSON first line, so they are returned as a
+    /// string for the parsers rather than as structured data — the body format
+    /// is Apple's and changes shape between report types.
+    private func copyCrashLog(named name: String, selector: String) async throws -> DynamicValue {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("auscult-report-\(UUID().uuidString).ips")
+        defer { try? FileManager.default.removeItem(at: destination) }
+
+        let result = try await Shell.run(xcrun, [
+            "devicectl", "device", "copy", "from", "--device", selector,
+            "--domain-type", "systemCrashLogs",
+            "--source", name,
+            "--destination", destination.path,
+        ], timeout: 90)
+
+        guard let data = FileManager.default.contents(atPath: destination.path) else {
+            throw TransportError.malformedResponse(
+                result.err.trimmed.firstLine.isEmpty
+                    ? "could not copy \(name) off the device"
+                    : result.err.trimmed.firstLine
+            )
+        }
+        return DynamicValue([
+            "name": name,
+            "text": String(lossyUTF8: data),
+            "size": data.count,
+        ])
     }
 
     // MARK: Plumbing
