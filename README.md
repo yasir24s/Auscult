@@ -144,19 +144,96 @@ Also worth knowing: on iOS 27 the relay's `NAND` request returns
 `NANDInfoDeprecated`. Apple removed it. Auscult reports that honestly instead
 of inventing a wear figure.
 
+## The on-device agent
+
+Some hardware simply cannot be tested from a Mac — there is no API that reports
+a stuck subpixel, and the host cannot spin a gyroscope. So `Agent/` is a signed
+iOS app that runs those tests on the device and reports back.
+
+The host reaches it over the **cable**: the agent opens a TCP listener on the
+device's loopback interface and usbmuxd tunnels a Mac-side socket to it. No
+Bonjour, no Wi-Fi, no Local Network permission prompt, and no pairing beyond the
+one the Mac already has. Because usbmux port forwarding is not something OS
+seeds change, this works the same on any iOS version.
+
+The **agent owns the catalogue**. The host asks what tests exist and synthesises
+one probe per entry, so adding a test to the agent requires no host change at
+all.
+
+```bash
+Scripts/build-agent.sh              # build, sign, install
+auscult agent                        # list what the device can test
+auscult agent --test compute.gpu     # run one test
+auscult run <udid> --guided          # everything, including the guided checks
+```
+
+Measured on an iPhone 17 Pro Max, iOS 27.0 seed:
+
+| Test | Result |
+|---|---|
+| Accelerometer | 1.00 g at rest, noise 0.0012 g, all axes live |
+| Gyroscope | zero-rate bias 0.0061 rad/s |
+| Magnetometer | raw field, calibration quality, Earth-field check |
+| CPU | 176 M iter/s single, 617 M multi, **6.1× scaling on 6 cores** |
+| GPU | Apple A19 Pro, **282 GFLOPS**, output verified not just dispatched |
+| Thermal | 14 s all-core load, throughput retained, throttle curve |
+| Storage | write 1.5 GB/s, read 2.6 GB/s — cache-bypassed, byte-verified |
+| Display | 1320×2868 at 120 Hz, EDR headroom 8× |
+| Biometrics | Face ID present and enrolled |
+| Display sweep | guided — 5 colour fields, **5/5 clean** |
+| Touch digitizer | guided — **40/40 cells**, faults localised by cell |
+
+### Guided tests never guess
+
+A prompt that times out is recorded as `skipped`, never as a defect. Reporting a
+broken display because nobody was holding the phone is the worst answer a
+diagnostic can give, so "nobody answered" and "the user saw a fault" are
+different outcomes in the wire protocol, not just in the wording.
+
+The touch test names the cells that never responded (`r1c3, r2c3, …`), which
+turns "the touchscreen is faulty" into "the top-right corner is dead" — the
+difference between a guess and a repair.
+
+### Four bugs that only real hardware finds
+
+Worth recording, because each was invisible in a simulator:
+
+1. **The watchdog kill.** Test bodies ran on the main actor, so 14 s of all-core
+   load blocked the run loop and iOS killed the app. The host saw the connection
+   drop mid-test. Test bodies are now detached.
+2. **The optimiser deleted the benchmark.** With the result discarded, the whole
+   loop was removed; zero elapsed time gave infinite throughput, and
+   `Int(infinity)` traps. Results now escape to a sink, a measurable elapsed
+   time is asserted, and the formatters are total.
+3. **Storage measured memory, not flash.** Both paths went through the buffer
+   cache and reported 7.7 GB/s. With `F_NOCACHE` and `fsync`, the real figure is
+   2.6 GB/s.
+4. **A healthy magnetometer read zero.** `CMDeviceMotion` only populates the
+   magnetic field in a magnetically-referenced frame; `xArbitraryZVertical`
+   leaves it at zeros.
+
+### Constraints worth knowing
+
+- The agent must be **in the foreground**. iOS suspends backgrounded apps and
+  the listening socket dies with them.
+- A **free** developer account allows only 3 sideloaded apps and expires
+  profiles after 7 days, so the agent needs reinstalling weekly. The paid
+  programme removes both limits.
+- First install requires trusting the developer profile on the device
+  (Settings › General › VPN & Device Management) — that needs the passcode.
+
 ## Roadmap
 
-**Phase 2 (next) — on-device agent.** A signed iOS companion app, sideloaded
-with the host's Apple Development identity, exercising what the host can't
-reach: full-screen dead-pixel sweep, multitouch grid, every `AVCaptureDevice`,
-speaker→mic loopback with FFT verification, accel/gyro/mag/baro sanity, GNSS
-fix, haptics, thermal curve under sustained load.
+**Phase 3 — cameras, audio, radios, location.** The permission-gated agent
+tests: a frame captured from every `AVCaptureDevice` checked for a stuck or
+black sensor, a tone played through the speaker and recovered through each
+microphone via FFT, Bluetooth scan counts, and GNSS time-to-first-fix. The
+purpose strings are already declared and the permission plumbing is in the wire
+protocol.
 
-**Phase 3 — stability history.** Kernel panic and jetsam log retrieval via
-`com.apple.crashreportcopymobile`, parsed into a panic-cause timeline. The
-service client is stubbed; the capability is declared and reports as
-unsupported until it lands.
+**Phase 4 — stability history.** Kernel panic and jetsam log retrieval via
+`com.apple.crashreportcopymobile`, parsed into a panic-cause timeline.
 
-**Phase 4 — baselines.** The CSV export exists so two runs of the same device
+**Phase 5 — baselines.** The CSV export exists so two runs of the same device
 can be diffed. Storing baselines turns "91.2% health" into "down 1.4 points in
 six weeks", which is the number that actually predicts a failure.
