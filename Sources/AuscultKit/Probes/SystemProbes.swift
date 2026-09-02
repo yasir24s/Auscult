@@ -52,10 +52,31 @@ public struct StorageProbe: Probe {
         }
 
         // Usage breakdown, only for categories that actually reported.
+        var categorised: Int64 = 0
         for (label, key) in Self.usageKeys {
             if let v = cfg.path(key).int, v > 0 {
                 metrics.append(.reading("usage.\(key)", label, .bytes(v)))
+                if key != "otherDiskUsage" { categorised += v }
             }
+        }
+
+        // "Other" is where iOS puts everything it will not itemise: app caches,
+        // streaming buffers, mail attachments, Siri voices, downloaded media
+        // held by apps, and update files. It is also the only category a user
+        // cannot act on directly, so an outsized value is worth calling out —
+        // it usually means one or two apps are hoarding cached media.
+        if let other = cfg.otherDiskUsage.int, let total, total > 0 {
+            let share = Double(other) / Double(total) * 100
+            metrics.append(.graded(
+                "otherShare", "Unitemised ('Other')", share, unit: "%",
+                warnAt: 25, failAt: 40, higherIsBetter: false,
+                note: "caches, streaming buffers and app-held downloads. iOS purges "
+                    + "some of this under pressure, but a large share usually means "
+                    + "specific apps are hoarding cached media — "
+                    + "Settings › General › iPhone Storage lists it per app, which "
+                    + "is not reachable from a Mac",
+                expectation: "under 25% of capacity"
+            ))
         }
 
         guard !metrics.isEmpty else {
