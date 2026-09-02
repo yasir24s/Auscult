@@ -140,7 +140,12 @@ struct UsbmuxClient {
         case 2: "device not connected — usbmuxd knows it but has no live link"
         case 3: "port refused by the device"
         case 5: "malformed request"
-        case 6: "connection refused — the device may be locked, or the service isn't running"
+        case 6:
+            // Overwhelmingly the cause on port 62078: iOS keeps the data
+            // partition encrypted until the passcode has been entered once
+            // after boot, and lockdownd refuses connections until then.
+            "connection refused — if the device has just rebooted, unlock it "
+            + "once with its passcode; lockdown does not answer before first unlock"
         default: "usbmux result code \(code)"
         }
     }
