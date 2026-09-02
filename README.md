@@ -230,6 +230,26 @@ The display is reported separately from the other assertions rather than ranked
 alongside them, because at 2–3 W whenever lit it dwarfs everything else and
 would otherwise bury the interesting entries.
 
+### Where the RAM went
+
+Jetsam reports carry a complete process table captured at the moment iOS killed
+something for memory — a better census than any live query, because it is
+precisely the snapshot of the worst moment.
+
+```bash
+auscult memory --limit 20
+```
+
+On a 12 GB device this found 434 resident processes, 581 MB free, a 2,587 MB
+compressed page store, and one suspended app holding 1,245 MB. Processes are
+grouped by category (kernel, system UI, Apple Intelligence, media processing,
+daemons, apps) because "3 GB of apps" is a legible answer and a list of 434
+process names is not.
+
+Suspended apps are called out separately: iOS keeping an app in memory is
+correct behaviour and costs no CPU, but under pressure that is exactly the
+memory being compressed and decompressed, so it is the cheapest thing to free.
+
 ### Naming the culprit
 
 iOS exposes no per-process energy API to third parties. The real numbers live in

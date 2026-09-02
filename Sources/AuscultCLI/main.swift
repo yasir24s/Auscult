@@ -16,6 +16,7 @@ func usage() -> String {
 
     USAGE
       auscult doctor                    Show which data paths this host has
+      auscult memory [udid]             Full resident-memory census (--limit N)
       auscult energy [udid]             Rank apps by iOS resource-limit reports
       auscult energy --detail <name>    Everything known about one process
       auscult drain [udid]              Controlled idle drain measurement
@@ -190,6 +191,12 @@ case "run":
         rendered.append(try render(report))
     }
     try write(rendered.joined(separator: flag("--json") ? "\n" : "\n\n"))
+
+case "memory":
+    await runMemoryCommand(
+        session: session, selector: positionals.first,
+        limit: option("--limit").flatMap(Int.init) ?? 20
+    )
 
 case "energy":
     await runEnergyCommand(
