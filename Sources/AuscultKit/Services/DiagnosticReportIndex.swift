@@ -20,8 +20,31 @@ public struct DiagnosticReportIndex: Sendable {
         public var kind: Kind
         public var date: Date?
         public var sizeBytes: Int
+        /// Which device the report actually came from.
+        public var origin: Origin
 
         public var filename: String { (path as NSString).lastPathComponent }
+    }
+
+    /// Whose report this is.
+    ///
+    /// An iPhone's crash-log directory also carries reports proxied from paired
+    /// accessories — most obviously an Apple Watch, which has no direct link to
+    /// a Mac and forwards everything through its phone. Those live under
+    /// `ProxiedDevice-<id>/` and must not be mixed in with the phone's own, or
+    /// a watch app crashing repeatedly is reported as a phone problem.
+    public enum Origin: Hashable, Sendable {
+        case host
+        case accessory(id: String)
+
+        public var isHost: Bool { self == .host }
+
+        public var label: String {
+            switch self {
+            case .host: "this device"
+            case .accessory(let id): "paired accessory \(id.prefix(12))"
+            }
+        }
     }
 
     /// Report categories, ordered by how strongly each implies energy use.
@@ -82,12 +105,21 @@ public struct DiagnosticReportIndex: Sendable {
             let filename = (path as NSString).lastPathComponent
             guard let kind = classify(filename) else { continue }
 
+            // Reports forwarded from a paired accessory sit under
+            // ProxiedDevice-<identifier>/.
+            var origin = Origin.host
+            if path.hasPrefix("ProxiedDevice-"),
+               let firstComponent = path.split(separator: "/").first {
+                origin = .accessory(id: String(firstComponent.dropFirst("ProxiedDevice-".count)))
+            }
+
             entries.append(Entry(
                 path: path,
                 process: processName(from: filename, kind: kind),
                 kind: kind,
                 date: file.metadata.lastModDate.string.flatMap(FlexibleDate.parse),
-                sizeBytes: Int(file.metadata.size.int ?? 0)
+                sizeBytes: Int(file.metadata.size.int ?? 0),
+                origin: origin
             ))
         }
         return DiagnosticReportIndex(entries: entries)
@@ -142,9 +174,12 @@ public struct DiagnosticReportIndex: Sendable {
     static let nonAttributableNames: Set<String> = ["JetsamEvent", "JetsamEvent-Bg", "stacks"]
 
     /// Processes ranked by how strongly the reports implicate them in energy use.
-    public func offenders(since cutoff: Date? = nil) -> [Offender] {
+    public func offenders(
+        since cutoff: Date? = nil, origin: Origin = .host
+    ) -> [Offender] {
         var byProcess: [String: Offender] = [:]
         for entry in entries where entry.kind.implicatesEnergy {
+            guard entry.origin == origin else { continue }
             if Self.nonAttributableNames.contains(entry.process) { continue }
             if let cutoff, let date = entry.date, date < cutoff { continue }
             var offender = byProcess[entry.process]
@@ -204,13 +239,25 @@ public struct DiagnosticReportIndex: Sendable {
         return Array(Set(busy.map(\.process))).sorted()
     }
 
-    public func count(of kind: Kind) -> Int {
-        entries.filter { $0.kind == kind }.count
+    public func count(of kind: Kind, origin: Origin = .host) -> Int {
+        entries.filter { $0.kind == kind && $0.origin == origin }.count
+    }
+
+    /// Accessories that have forwarded reports through this device.
+    public var accessories: [String] {
+        Array(Set(entries.compactMap { entry -> String? in
+            if case .accessory(let id) = entry.origin { return id }
+            return nil
+        })).sorted()
+    }
+
+    public func entries(from origin: Origin) -> [Entry] {
+        entries.filter { $0.origin == origin }
     }
 
     /// The most recent reports of a kind, newest first.
-    public func recent(_ kind: Kind, limit: Int) -> [Entry] {
-        entries.filter { $0.kind == kind }
+    public func recent(_ kind: Kind, limit: Int, origin: Origin = .host) -> [Entry] {
+        entries.filter { $0.kind == kind && $0.origin == origin }
             .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
             .prefix(limit)
             .map { $0 }

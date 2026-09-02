@@ -198,3 +198,97 @@ public struct StabilityHistoryProbe: Probe {
         return result(verdict, summary, metrics: metrics)
     }
 }
+
+// MARK: - Paired accessories
+
+/// Diagnostics forwarded from paired accessories, chiefly an Apple Watch.
+///
+/// A Watch has no direct link to a Mac — it pairs to a phone, and forwards its
+/// crash and resource reports through it. Those land in the phone's crash-log
+/// directory under `ProxiedDevice-<id>/`, which means a useful slice of Watch
+/// health is reachable from the host without the Watch being paired to Xcode at
+/// all.
+///
+/// It is a slice, not a full diagnostic: there is no battery gauge, no
+/// IORegistry and no on-device agent for the accessory. What it does give is
+/// crash and resource-exhaustion history, which is exactly what identifies an
+/// app misbehaving on the wrist.
+public struct AccessoryHealthProbe: Probe {
+    public let id = "accessory.health"
+    public let title = "Paired Accessory Health"
+    public let section = ReportSection.stability
+    public let requiredCapabilities: Set<Capability> = [.crashLogs]
+
+    public init() {}
+
+    public func run(device: DeviceSnapshot, router: TransportRouter) async throws -> ProbeResult {
+        let listing = try await router.fetch(.crashLogIndex, for: device)
+        let index = DiagnosticReportIndex.parse(listing)
+        let accessories = index.accessories
+
+        guard !accessories.isEmpty else {
+            return result(.info, "No paired accessory has forwarded diagnostics")
+        }
+
+        var metrics: [Metric] = [
+            .reading("accessoryCount", "Accessories forwarding reports",
+                     .int(Int64(accessories.count))),
+        ]
+        var worstVerdict = Verdict.info
+
+        for accessoryID in accessories {
+            let origin = DiagnosticReportIndex.Origin.accessory(id: accessoryID)
+            let reports = index.entries(from: origin)
+            // Several proxy entries are placeholders with nothing in them.
+            guard reports.count > 4 else { continue }
+
+            let short = String(accessoryID.prefix(12))
+            let crashes = index.count(of: .crash, origin: origin)
+            let kills = index.count(of: .jetsam, origin: origin)
+
+            metrics.append(.reading("acc.\(short).reports", "Accessory \(short) — reports",
+                                    .int(Int64(reports.count))))
+
+            // Which process dominates? On a Watch this is almost always one
+            // misbehaving app, and it is worth naming.
+            var counts: [String: Int] = [:]
+            for report in reports where report.kind == .crash {
+                guard !report.process.hasPrefix("Analytics") else { continue }
+                counts[report.process, default: 0] += 1
+            }
+            if let (name, count) = counts.max(by: { $0.value < $1.value }), count >= 5 {
+                // A repeatedly crashing app costs battery on the accessory:
+                // every relaunch repeats its startup work on a very small cell.
+                let verdict: Verdict = count >= 25 ? .fail : .warn
+                worstVerdict = max(worstVerdict, verdict)
+                metrics.append(Metric(
+                    id: "acc.\(short).worst", label: "Accessory \(short) — worst offender",
+                    value: .string("\(name) — \(count) crashes"),
+                    verdict: verdict,
+                    note: "a repeatedly crashing app drains an accessory's battery, "
+                        + "because each relaunch repeats its startup work. "
+                        + "Reinstalling it on the accessory usually clears this"
+                ))
+            }
+
+            if kills > 0 {
+                metrics.append(.reading("acc.\(short).kills", "Accessory \(short) — memory kills",
+                                        .int(Int64(kills))))
+            }
+            if crashes > 0, counts.count > 1 {
+                metrics.append(.reading("acc.\(short).processes",
+                    "Accessory \(short) — processes reporting",
+                    .list(counts.sorted { $0.value > $1.value }.prefix(6)
+                        .map { "\($0.key) (\($0.value))" })))
+            }
+        }
+
+        metrics.append(.absent("accessoryDeep", "Accessory battery & sensors",
+            why: "an accessory forwards reports but exposes no gauge or agent — "
+               + "pair it to Xcode over Wi-Fi for direct probing"))
+
+        return result(worstVerdict,
+                      "\(accessories.count) paired accessory(ies) forwarding diagnostics",
+                      metrics: metrics)
+    }
+}

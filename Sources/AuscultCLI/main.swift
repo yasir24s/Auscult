@@ -25,6 +25,7 @@ func usage() -> String {
       auscult agent [udid] --test <id>  Run one on-device hardware test
       auscult usbmux                    Inspect the mux layer and pair records
       auscult pairtest <file>           Verify a pair record builds a TLS identity
+      auscult parse-listing <file>      Re-parse a saved file listing, no device needed
       auscult relay [udid]              Trace the deep lockdown handshake step by step
       auscult ioreg --class X           Dump an IORegistry node (--name / --class / --udid)
       auscult list                      List every visible device
@@ -191,6 +192,13 @@ case "run":
         rendered.append(try render(report))
     }
     try write(rendered.joined(separator: flag("--json") ? "\n" : "\n\n"))
+
+case "parse-listing":
+    guard let path = positionals.first else {
+        warn("usage: auscult parse-listing <devicectl files JSON>")
+        exit(2)
+    }
+    runParseListingCommand(path: path)
 
 case "memory":
     await runMemoryCommand(

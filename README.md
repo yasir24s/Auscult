@@ -206,6 +206,26 @@ The report also derives the PMU's accumulators: mean draw during the periods the
 device was on battery, mean system load since boot, charger conversion loss, and
 a projected runtime from pack energy divided by measured draw.
 
+### Paired accessories come along for free
+
+An Apple Watch has no direct link to a Mac — it pairs to a phone and forwards
+its crash and resource reports through it. Those land in the phone's crash-log
+directory under `ProxiedDevice-<id>/`, so a useful slice of Watch health is
+reachable without the Watch being paired to Xcode at all.
+
+This was originally a *bug*: the index attributed those reports to the phone, so
+a watch app crashing 131 times appeared in the iPhone's offender ranking.
+Reports now carry an `Origin`, rankings are host-only by default, and
+`AccessoryHealthProbe` reports accessories separately.
+
+What an accessory gives is crash and resource history — enough to identify an
+app misbehaving on the wrist. What it does not give is a battery gauge,
+IORegistry, or an agent, because none of those reach through the proxy.
+
+```bash
+auscult parse-listing <saved-listing.json>   # verify attribution offline
+```
+
 ### The richest artefact: `LowBatteryLog`
 
 When iOS shuts down for low battery it writes a report recording the
