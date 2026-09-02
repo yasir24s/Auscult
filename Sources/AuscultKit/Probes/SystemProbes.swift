@@ -449,6 +449,13 @@ public struct RunningAppsProbe: Probe {
             persistentPatterns.contains { name.localizedCaseInsensitiveContains($0) }
         }.sorted()
 
+        // Count VPNs specifically: more than one is redundant, and only one can
+        // route traffic at a time, so the others are pure overhead.
+        let vpnPatterns = ["vpn", "hotspotshield", "wireguard", "openvpn", "tunnel"]
+        let vpns = persistent.filter { name in
+            vpnPatterns.contains { name.localizedCaseInsensitiveContains($0) }
+        }
+
         var metrics: [Metric] = [
             .reading("total", "Total processes", .int(Int64(list.count))),
             .reading("thirdPartyCount", "Third-party apps resident",
@@ -467,7 +474,11 @@ public struct RunningAppsProbe: Probe {
                 verdict: persistent.count >= 2 ? .warn : .info,
                 note: "VPNs, location sharing and content blockers hold system "
                     + "extensions up permanently — Background App Refresh does not "
-                    + "affect them. Two VPNs is one more than any device needs."
+                    + "affect them; the fix is removal or reconfiguration"
+                    + (vpns.count > 1
+                        ? ". \(vpns.count) VPNs are installed, and only one can carry "
+                          + "traffic at a time — the rest are pure overhead"
+                        : "")
             ))
         }
         if !appExtensions.isEmpty {
