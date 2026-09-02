@@ -195,6 +195,15 @@ public struct LiveDrainProbe: Probe {
         var samples: [Sample] = []
         let nitsBefore = await Self.currentNits(device: device, router: router)
 
+        // Establish whether the device is mid-maintenance before measuring.
+        // A reboot triggers photo analysis, Spotlight indexing and iCloud sync,
+        // which on a media-heavy device runs for hours at several watts — and a
+        // reading taken then describes the rebuild, not the device.
+        var maintenance: [String] = []
+        if let listing = try? await router.fetch(.crashLogIndex, for: device) {
+            maintenance = DiagnosticReportIndex.parse(listing).maintenanceInProgress()
+        }
+
         for index in 0..<sampleCount {
             if Task.isCancelled { throw CancellationError() }
             // Fresh each time: the cached response would repeat one reading.
@@ -256,6 +265,16 @@ public struct LiveDrainProbe: Probe {
                     : "charging is paused, so this is the device's own consumption"
             ))
         }
+        if !maintenance.isEmpty {
+            metrics.append(Metric(
+                id: "maintenance", label: "System maintenance running",
+                value: .list(maintenance),
+                verdict: .warn,
+                note: "these rebuild indexes after a reboot or a large import and can "
+                    + "run for hours on a media-heavy device. Idle draw is legitimately "
+                    + "elevated while they work — re-measure once they finish"
+            ))
+        }
         if duringDiagnosticRun {
             metrics.append(.reading("measurementContext", "Measurement conditions",
                 .string("taken during a diagnostic run"),
@@ -282,8 +301,12 @@ public struct LiveDrainProbe: Probe {
                 "meanSystemLoad", "Mean system load", meanLoad, unit: "mW",
                 // Strict thresholds only when the reading is clean: display
                 // off, charging paused, and no diagnostic load.
-                warnAt: screenOff ? (duringDiagnosticRun || charging ? 2500 : 600) : 3000,
-                failAt: screenOff ? (duringDiagnosticRun || charging ? 5000 : 1200) : 5000,
+                warnAt: screenOff
+                    ? (duringDiagnosticRun || charging || !maintenance.isEmpty ? 2500 : 600)
+                    : 3000,
+                failAt: screenOff
+                    ? (duringDiagnosticRun || charging || !maintenance.isEmpty ? 5000 : 1200)
+                    : 5000,
                 higherIsBetter: false,
                 note: screenOff
                     ? (charging

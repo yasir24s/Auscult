@@ -57,6 +57,22 @@ func runDrainCommand(
         _ = readLine()
     }
 
+    // Warn before spending a minute measuring something that won't mean much.
+    if let listing = try? await session.router.fetch(.crashLogIndex, for: device) {
+        let busy = DiagnosticReportIndex.parse(listing).maintenanceInProgress()
+        if !busy.isEmpty {
+            print("""
+
+            NOTE: system maintenance is running — \(busy.joined(separator: ", ")).
+            These rebuild photo analysis, Spotlight and iCloud state after a reboot
+            or a large import, and can run for hours on a device with a lot of media.
+            Idle draw is legitimately high while they work, so this measurement will
+            read the rebuild rather than the device's normal behaviour. For a true
+            baseline, re-run once they have finished.
+            """)
+        }
+    }
+
     print("Measuring for \(Int(seconds))s — do not touch the device…")
 
     let probe = LiveDrainProbe(

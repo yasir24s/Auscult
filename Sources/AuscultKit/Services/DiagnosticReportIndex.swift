@@ -177,6 +177,33 @@ public struct DiagnosticReportIndex: Sendable {
         }
     }
 
+    /// Apple's own indexing, analysis and sync daemons.
+    ///
+    /// After a reboot — or a large photo import — these rebuild indexes that
+    /// can take hours on a device with tens of gigabytes of media. While they
+    /// run, idle power draw is legitimately several times its resting value,
+    /// and any drain measurement taken during that window measures the
+    /// rebuild rather than the device's normal behaviour.
+    static let maintenanceDaemons: Set<String> = [
+        "photoanalysisd", "mediaanalysisd", "searchd", "searchtoold",
+        "suggestd", "duetexpertd", "siriactionsd", "cloudd", "backupd",
+        "spotlightknowledged", "knowledgeconstructiond", "assetsd",
+        "biomesyncd", "corespotlightd", "mediaremoted",
+    ]
+
+    /// Maintenance daemons that have exceeded a resource limit recently.
+    ///
+    /// Presence here means a drain measurement is not measuring steady state.
+    public func maintenanceInProgress(within window: TimeInterval = 3600) -> [String] {
+        let cutoff = Date().addingTimeInterval(-window)
+        let busy = entries.filter { entry in
+            guard entry.kind.implicatesEnergy else { return false }
+            guard let date = entry.date, date >= cutoff else { return false }
+            return Self.maintenanceDaemons.contains(entry.process)
+        }
+        return Array(Set(busy.map(\.process))).sorted()
+    }
+
     public func count(of kind: Kind) -> Int {
         entries.filter { $0.kind == kind }.count
     }
