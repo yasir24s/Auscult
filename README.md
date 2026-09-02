@@ -206,6 +206,30 @@ The report also derives the PMU's accumulators: mean draw during the periods the
 device was on battery, mean system load since boot, charger conversion loss, and
 a projected runtime from pack energy divided by measured draw.
 
+### The richest artefact: `LowBatteryLog`
+
+When iOS shuts down for low battery it writes a report recording the
+awake/standby split, the foreground app, and **every power assertion held at
+that moment** — which names the subsystems that were preventing sleep and for
+how long. Read across several events it is more informative than any
+measurement the host can take.
+
+The awake share is the figure that matters, because consumption follows from it
+almost mechanically:
+
+```
+✗ Times the battery ran flat: 4 in 5.5 days
+✗ Time awake rather than asleep: 40.72%   (a lightly-used phone is under 15%)
+✗ Longest unbroken screen-on stretch: 3.75 h
+! In the foreground when it died: lavaslots (2×), instagram (1×), youtube (1×)
+  Subsystems preventing sleep: runningboardd/SpringBoard 3h45m,
+    app<lavaslots> 1h47m, audiomxd VAD 1h9m, bluetoothd BTStack 57m
+```
+
+The display is reported separately from the other assertions rather than ranked
+alongside them, because at 2–3 W whenever lit it dwarfs everything else and
+would otherwise bury the interesting entries.
+
 ### Naming the culprit
 
 iOS exposes no per-process energy API to third parties. The real numbers live in

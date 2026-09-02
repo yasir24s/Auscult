@@ -36,6 +36,11 @@ public struct DiagnosticReportIndex: Sendable {
         case jetsam = "Memory kill"
         /// Kernel panic.
         case panic = "Kernel panic"
+        /// Written when the battery runs flat. The richest single source for a
+        /// drain investigation: it records the awake/standby split, which app
+        /// was in the foreground, and every power assertion held at the moment
+        /// the device died.
+        case lowBattery = "Battery ran flat"
         /// System-wide stack sample, taken when the device is struggling.
         case stackshot = "Stackshot"
         /// Apple's daily analytics submission. Large; not parsed.
@@ -94,6 +99,7 @@ public struct DiagnosticReportIndex: Sendable {
         if lower.contains("cpu_resource") { return .cpuResource }
         if lower.contains("wakeups_resource") { return .wakeupsResource }
         if lower.contains("diskwrites_resource") { return .diskWritesResource }
+        if lower.contains("lowbatterylog") { return .lowBattery }
         if lower.contains("jetsam") { return .jetsam }
         if lower.contains("panic") { return .panic }
         if lower.hasPrefix("stacks-") { return .stackshot }
@@ -280,6 +286,135 @@ public struct ResourceReport: Sendable {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         for format in ["yyyy-MM-dd HH:mm:ss.SS Z", "yyyy-MM-dd HH:mm:ss Z"] {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: raw) { return date }
+        }
+        return nil
+    }
+}
+
+
+/// One `LowBatteryLog` report: the state of the device when the battery died.
+///
+/// This is the most informative artefact iOS produces for a drain complaint. It
+/// records how long the device had been awake versus asleep, what was in the
+/// foreground, and — most usefully — every *power assertion* being held, which
+/// names the subsystems that were preventing sleep and for how long.
+public struct LowBatteryLogReport: Sendable {
+    /// A held power assertion: who held it, what for, and how long.
+    public struct Assertion: Sendable {
+        public var holder: String
+        public var name: String
+        public var heldSeconds: Double
+
+        /// The display being on is by far the most expensive assertion, so it
+        /// is worth distinguishing from the rest.
+        public var isBacklight: Bool {
+            name.contains("backlightActive") || name.contains("liveRendering")
+        }
+    }
+
+    public var date: Date?
+    public var awakeSeconds: Double?
+    public var standbySeconds: Double?
+    public var foregroundApps: [String]
+    public var screenBrightness: Double?
+    public var voltageMillivolts: Double?
+    public var assertions: [Assertion]
+
+    /// Share of total time the device was awake rather than in standby.
+    ///
+    /// The single most diagnostic number in the file. A phone left mostly idle
+    /// sits under 15%; sustained figures above 30% mean the device is barely
+    /// sleeping, which no battery can survive.
+    public var awakePercent: Double? {
+        guard let awakeSeconds, let standbySeconds, awakeSeconds + standbySeconds > 0
+        else { return nil }
+        return awakeSeconds / (awakeSeconds + standbySeconds) * 100
+    }
+
+    /// Longest continuous stretch the display was on.
+    public var longestBacklightSeconds: Double? {
+        assertions.filter(\.isBacklight).map(\.heldSeconds).max()
+    }
+
+    public static func parse(_ text: String) -> LowBatteryLogReport? {
+        var report = LowBatteryLogReport(
+            foregroundApps: [], assertions: []
+        )
+        var sawAnything = false
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
+            let line = String(rawLine)
+
+            if line.hasPrefix("Date:") {
+                report.date = Self.parseDate(Self.after("Date:", line))
+                sawAnything = true
+            } else if line.hasPrefix("Awake Time:") {
+                report.awakeSeconds = Self.parseDuration(Self.after("Awake Time:", line))
+                sawAnything = true
+            } else if line.hasPrefix("Standby Time:") {
+                report.standbySeconds = Self.parseDuration(Self.after("Standby Time:", line))
+            } else if line.hasPrefix("Foreground Applications:") {
+                report.foregroundApps = Self.after("Foreground Applications:", line)
+                    .split(separator: " ")
+                    .map { String($0).trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+            } else if line.hasPrefix("Screen Brightness:") {
+                report.screenBrightness = Double(Self.after("Screen Brightness:", line))
+            } else if line.hasPrefix("Voltage:") {
+                report.voltageMillivolts = Double(
+                    Self.after("Voltage:", line)
+                        .replacingOccurrences(of: " mV", with: "")
+                        .trimmingCharacters(in: .whitespaces)
+                )
+            } else if let assertion = Self.parseAssertion(line) {
+                report.assertions.append(assertion)
+                sawAnything = true
+            }
+        }
+        return sawAnything ? report : nil
+    }
+
+    /// `holder: assertion-name\tKIND == 255, held for HH:MM:SS`
+    private static func parseAssertion(_ line: String) -> Assertion? {
+        guard line.contains("held for"),
+              line.contains("PreventUserIdleSystemSleep") || line.contains("SystemIsActive"),
+              let colon = line.firstIndex(of: ":")
+        else { return nil }
+
+        let holder = String(line[line.startIndex..<colon]).trimmingCharacters(in: .whitespaces)
+        guard !holder.isEmpty, !holder.contains(" ") else { return nil }
+
+        let rest = String(line[line.index(after: colon)...])
+        // The assertion name is separated from the state by a tab.
+        let name = rest.split(separator: "\t").first
+            .map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+
+        guard let heldRange = rest.range(of: "held for ") else { return nil }
+        let duration = rest[heldRange.upperBound...].trimmingCharacters(in: .whitespaces)
+        guard let seconds = parseDuration(duration) else { return nil }
+
+        return Assertion(holder: holder, name: name, heldSeconds: seconds)
+    }
+
+    private static func after(_ marker: String, _ line: String) -> String {
+        guard let range = line.range(of: marker) else { return "" }
+        return line[range.upperBound...].trimmingCharacters(in: .whitespaces)
+    }
+
+    /// "30:35:54" or "30:35:54 (110154)" → seconds.
+    static func parseDuration(_ raw: String) -> Double? {
+        let clock = raw.split(separator: " ").first.map(String.init) ?? raw
+        let parts = clock.split(separator: ":").compactMap { Double($0) }
+        guard parts.count == 3 else { return nil }
+        return parts[0] * 3600 + parts[1] * 60 + parts[2]
+    }
+
+    private static func parseDate(_ raw: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        for format in ["yyyy-MM-dd HH:mm:ss.SSS Z", "yyyy-MM-dd HH:mm:ss Z"] {
             formatter.dateFormat = format
             if let date = formatter.date(from: raw) { return date }
         }
