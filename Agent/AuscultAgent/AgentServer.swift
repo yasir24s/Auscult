@@ -50,6 +50,9 @@ final class AgentServer {
     private var connection: NWConnection?
     private var inbound = Data()
     private var runTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
+    /// When the last frame was sent, so the heartbeat only fires during silence.
+    private var lastSendAt = Date.distantPast
     private let queue = DispatchQueue(label: "com.yasir.auscult.agent.net")
     private let registry = TestRegistry()
 
@@ -262,6 +265,7 @@ final class AgentServer {
                 self?.note("Running \(descriptor.title)")
                 // Keep the screen alive for the duration of this test only.
                 UIApplication.shared.isIdleTimerDisabled = true
+                self?.startHeartbeat(testID: testID)
             }
 
             var result: AgentTestResult
@@ -292,6 +296,7 @@ final class AgentServer {
                 ))
             } catch is CancellationError {
                 await MainActor.run { [weak self] in
+                    self?.stopHeartbeat()
                     UIApplication.shared.isIdleTimerDisabled = false
                     self?.state = .connected(host: "Mac")
                 }
@@ -308,6 +313,7 @@ final class AgentServer {
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                self.stopHeartbeat()
                 UIApplication.shared.isIdleTimerDisabled = false
                 self.lastResults.removeAll { $0.testID == result.testID }
                 self.lastResults.append(result)
@@ -321,7 +327,7 @@ final class AgentServer {
     // MARK: Interactive prompts
 
     func askUser(
-        _ prompt: UserPrompt, testID: String, timeout: TimeInterval = 120
+        _ prompt: UserPrompt, testID: String, timeout: TimeInterval = 45
     ) async -> PromptAnswer {
         send(.progress(AgentProgress(
             testID: testID, fraction: 0.5,
@@ -356,8 +362,36 @@ final class AgentServer {
 
     // MARK: Sending
 
+    /// Emit a progress frame periodically while a test is running.
+    ///
+    /// Some tests are legitimately silent for a long time — a camera or
+    /// microphone permission prompt sits until somebody taps it, and a guided
+    /// test waits on a person. Without traffic the host cannot tell a working
+    /// agent from a dead one, and its socket read times out. A heartbeat during
+    /// silence makes waiting distinguishable from failure.
+    private func startHeartbeat(testID: String) {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                guard Date().timeIntervalSince(self.lastSendAt) >= 4 else { continue }
+                self.send(.progress(AgentProgress(
+                    testID: testID, fraction: -1,
+                    message: "still working", awaitingUser: false
+                )))
+            }
+        }
+    }
+
+    private func stopHeartbeat() {
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+    }
+
     private func send(_ response: AgentResponse) {
         guard let connection else { return }
+        lastSendAt = Date()
         do {
             let frame = try AgentFraming.encode(response)
             connection.send(content: frame, completion: .contentProcessed { [weak self] error in

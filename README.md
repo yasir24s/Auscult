@@ -182,6 +182,35 @@ Measured on an iPhone 17 Pro Max, iOS 27.0 seed:
 | Biometrics | Face ID present and enrolled |
 | Display sweep | guided — 5 colour fields, **5/5 clean** |
 | Touch digitizer | guided — **40/40 cells**, faults localised by cell |
+| Cameras | all 6 lenses enumerated, per-lens frame statistics |
+| Speaker & mics | **tone recovered at 63 dB**, 3 microphones enumerated |
+| Bluetooth | **54 advertisers heard**, strongest −29 dBm |
+| GNSS | time-to-first-fix and accuracy (coordinates withheld) |
+
+## Investigating battery drain
+
+`auscult drain` is the purpose-built workflow, because the ordinary probe reports
+whatever the device happens to be doing and that is nearly useless for the
+question:
+
+```bash
+auscult drain --wait 20 --seconds 60    # lock the screen during the countdown
+```
+
+It reads `AppleARMBacklight`'s `CurrentNits` so it knows whether the panel was
+actually dark, and **grades against different thresholds accordingly** — 3 W is
+unremarkable with the screen lit and a significant finding with it off. Without
+that check the measurement rests on the operator's word.
+
+The report also derives the PMU's accumulators: mean draw during the periods the
+device was on battery, mean system load since boot, charger conversion loss, and
+a projected runtime from pack energy divided by measured draw.
+
+What it cannot do is attribute energy to a process — iOS keeps that in its power
+log. So `RunningAppsProbe` lists third-party residency as a *shortlist*, stated
+carefully: iOS holds recently-used apps suspended in memory, so residency is not
+evidence of consumption. Settings › Battery remains the authority on per-app
+energy.
 
 ### Guided tests never guess
 
@@ -194,9 +223,9 @@ The touch test names the cells that never responded (`r1c3, r2c3, …`), which
 turns "the touchscreen is faulty" into "the top-right corner is dead" — the
 difference between a guess and a repair.
 
-### Four bugs that only real hardware finds
+### Bugs that only real hardware finds
 
-Worth recording, because each was invisible in a simulator:
+Worth recording, because none was visible in a simulator:
 
 1. **The watchdog kill.** Test bodies ran on the main actor, so 14 s of all-core
    load blocked the run loop and iOS killed the app. The host saw the connection
@@ -211,6 +240,19 @@ Worth recording, because each was invisible in a simulator:
 4. **A healthy magnetometer read zero.** `CMDeviceMotion` only populates the
    magnetic field in a magnetically-referenced frame; `xArbitraryZVertical`
    leaves it at zeros.
+5. **A dead touchscreen that wasn't.** The capture view was a `UIViewRepresentable`
+   with no intrinsic content size, so SwiftUI laid it out at zero and no touch
+   ever reached it — reported as 0 of 40 cells on a perfectly good digitizer. It
+   now counts raw events, so that failure mode is self-diagnosing.
+6. **Three dead rear cameras that weren't.** A phone face-up on a desk has three
+   covered lenses. The fix is that read noise distinguishes them: a live sensor
+   in the dark still returns σ ≈ 0.1, while a genuinely dead one returns
+   *exactly* zero. Dark is now reported as unverified, never as a fault.
+7. **A silent speaker that worked.** `AVAudioSession` in `.measurement` mode
+   drops output gain far enough that the microphone two centimetres away
+   couldn't hear a 1 kHz tone. In `.default` mode the same tone recovers at
+   63 dB. The test now also reads `outputVolume` first, because media volume
+   being down is the most common reason a loopback test "fails".
 
 ### Constraints worth knowing
 
@@ -224,16 +266,16 @@ Worth recording, because each was invisible in a simulator:
 
 ## Roadmap
 
-**Phase 3 — cameras, audio, radios, location.** The permission-gated agent
-tests: a frame captured from every `AVCaptureDevice` checked for a stuck or
-black sensor, a tone played through the speaker and recovered through each
-microphone via FFT, Bluetooth scan counts, and GNSS time-to-first-fix. The
-purpose strings are already declared and the permission plumbing is in the wire
-protocol.
+**Phase 4 — per-app energy attribution.** The device's own power log
+(`CurrentPowerlog.PLSQL`) is the only place iOS attributes energy per process.
+It ships inside a sysdiagnose, but `devicectl device sysdiagnose` requires
+interactive consent on a TTY, so capturing it needs either a pty or the
+`crashreportcopymobile` service. Until then the drain workflow narrows the
+candidates and Settings › Battery does the attribution.
 
-**Phase 4 — stability history.** Kernel panic and jetsam log retrieval via
+**Phase 5 — stability history.** Kernel panic and jetsam log retrieval via
 `com.apple.crashreportcopymobile`, parsed into a panic-cause timeline.
 
-**Phase 5 — baselines.** The CSV export exists so two runs of the same device
+**Phase 6 — baselines.** The CSV export exists so two runs of the same device
 can be diffed. Storing baselines turns "91.2% health" into "down 1.4 points in
 six weeks", which is the number that actually predicts a failure.

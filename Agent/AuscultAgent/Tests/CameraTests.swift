@@ -71,52 +71,149 @@ struct CameraTest: AgentTest {
             .number("count", "Cameras discovered", Double(physical.count)),
             .list("discovered", "Lenses", physical.map { Self.label(for: $0) }),
         ]
-        var failures: [String] = []
+
+        // Two passes, deliberately.
+        //
+        // Prompting inside the capture loop blocks every remaining camera
+        // behind one person's attention — and if they don't answer, the whole
+        // test burns the timeout and then measures a scene that has moved on.
+        // So: capture everything first, and only then, if anything looked dark,
+        // ask once and re-test just those.
+        var results: [(device: AVCaptureDevice, stats: FrameStatistics?, error: String?)] = []
 
         for (index, device) in physical.enumerated() {
             if Task.isCancelled { throw CancellationError() }
-            let name = Self.label(for: device)
             context.progress(
-                Double(index) / Double(physical.count), "Capturing from \(name)"
+                Double(index) / Double(physical.count) * 0.5,
+                "Capturing from \(Self.label(for: device))"
             )
-
             do {
-                let stats = try await Self.captureStatistics(from: device)
-                let id = "cam.\(device.uniqueID.replacingOccurrences(of: ":", with: "-"))"
-
-                // A live sensor produces variance. A failed one produces a flat
-                // field, whatever colour that field happens to be.
-                let alive = stats.standardDeviation > 1.5
-                metrics.append(.flag("\(id).alive", "\(name) — sensor producing an image", alive,
-                                     shouldBe: true, severityIfNot: .fail,
-                                     note: alive
-                                        ? nil
-                                        : "the frame is a flat field (σ=\(stats.standardDeviation.clean)), "
-                                          + "which is what a dead sensor returns"))
-                metrics.append(.number("\(id).luma", "\(name) — mean brightness",
-                                       stats.mean, unit: "/255",
-                                       note: stats.mean < 3
-                                        ? "almost black — is the lens covered?"
-                                        : (stats.mean > 250 ? "almost white — is it pointed at a light?" : nil)))
-                metrics.append(.number("\(id).variance", "\(name) — detail (σ)",
-                                       stats.standardDeviation))
-                metrics.append(.reading("\(id).resolution", "\(name) — capture size",
-                                        "\(stats.width) × \(stats.height)", unit: "px"))
-                if !alive { failures.append(name) }
+                results.append((device, try await Self.captureStatistics(from: device), nil))
             } catch {
-                metrics.append(.flag("cam.\(index).alive", "\(name) — capture", false,
-                                     shouldBe: true, severityIfNot: .fail,
-                                     note: error.localizedDescription))
-                failures.append(name)
+                results.append((device, nil, error.localizedDescription))
             }
+        }
+
+        let darkIndices = results.indices.filter { index in
+            results[index].stats.map(Self.isDark) ?? false
+        }
+
+        if !darkIndices.isEmpty {
+            let names = darkIndices.map { Self.label(for: results[$0].device) }
+            context.awaitingUser(
+                "Hold the device up so nothing covers the lenses, then confirm on screen"
+            )
+            let plural: String = names.count == 1 ? "camera" : "cameras"
+            let joined: String = names.joined(separator: ", ")
+            let message: String = "\(names.count) \(plural) saw only darkness (\(joined)).\n\n"
+                + "Hold the device up, away from any surface, with the room lit — then tap Ready."
+            let answer = await context.askUser(AgentServer.UserPrompt(
+                message: message,
+                confirmTitle: "Ready",
+                rejectTitle: "Skip"
+            ))
+
+            if answer == .confirmed {
+                // Let auto-exposure adapt to the new scene before re-measuring.
+                try? await Task.sleep(nanoseconds: 900_000_000)
+                for (offset, index) in darkIndices.enumerated() {
+                    if Task.isCancelled { throw CancellationError() }
+                    context.progress(
+                        0.5 + Double(offset) / Double(darkIndices.count) * 0.45,
+                        "Re-testing \(Self.label(for: results[index].device))"
+                    )
+                    if let retry = try? await Self.captureStatistics(from: results[index].device) {
+                        results[index].stats = retry
+                    }
+                }
+            }
+        }
+
+        var failures: [String] = []
+        var inconclusive: [String] = []
+
+        for entry in results {
+            let name = Self.label(for: entry.device)
+            let id = Self.metricID(for: entry.device)
+
+            guard let stats = entry.stats else {
+                metrics.append(.flag("\(id).alive", "\(name) — capture", false,
+                                     shouldBe: true, severityIfNot: .fail,
+                                     note: entry.error ?? "no frames delivered"))
+                failures.append(name)
+                continue
+            }
+
+            switch Self.classify(stats) {
+            case .live:
+                metrics.append(.flag("\(id).alive", "\(name) — sensor producing an image",
+                                     true, shouldBe: true))
+            case .frozen:
+                metrics.append(.flag("\(id).alive", "\(name) — sensor producing an image",
+                                     false, shouldBe: true, severityIfNot: .fail,
+                                     note: "perfectly uniform frame with not even sensor "
+                                         + "read noise — this is a dead sensor"))
+                failures.append(name)
+            case .dark:
+                metrics.append(AgentMetric(
+                    id: "\(id).alive", label: "\(name) — sensor producing an image",
+                    kind: .bool, raw: "true", verdict: .skipped,
+                    note: "sensor alive (read noise σ=\(stats.standardDeviation.clean)) but the "
+                        + "view was dark — lens covered or room unlit, so not confirmed"
+                ))
+                inconclusive.append(name)
+            }
+
+            metrics.append(.number("\(id).luma", "\(name) — mean brightness",
+                                   stats.mean, unit: "/255"))
+            metrics.append(.number("\(id).variance", "\(name) — detail (σ)",
+                                   stats.standardDeviation))
+            metrics.append(.reading("\(id).resolution", "\(name) — capture size",
+                                    "\(stats.width) × \(stats.height)", unit: "px"))
         }
 
         context.progress(1, "Done")
         let verdict = rollup(metrics)
-        let summary = failures.isEmpty
-            ? "All \(physical.count) cameras returned a live image"
-            : "No usable image from: \(failures.joined(separator: ", "))"
+        let confirmed = physical.count - failures.count - inconclusive.count
+        let summary: String
+        if !failures.isEmpty {
+            summary = "Dead sensor on: \(failures.joined(separator: ", "))"
+        } else if !inconclusive.isEmpty {
+            let darkCount: Int = inconclusive.count
+            summary = "\(confirmed) of \(physical.count) confirmed live; "
+                + "\(darkCount) saw only darkness (not a fault, just unverified)"
+        } else {
+            summary = "All \(physical.count) cameras returned a live image"
+        }
         return result(verdict, summary, metrics: metrics)
+    }
+
+    /// How a captured frame should be interpreted.
+    enum Classification {
+        /// Real detail: the sensor and the optics both work.
+        case live
+        /// Perfectly uniform — not even read noise. Only a dead sensor does this.
+        case frozen
+        /// Alive but with nothing to see: covered lens or an unlit room.
+        case dark
+    }
+
+    /// Every image sensor produces a little read noise, so a *perfectly* flat
+    /// frame is the signature of a frozen or dead sensor. A dark-but-noisy
+    /// frame means the sensor is fine and the view is not — which is what a
+    /// phone lying face-up on a desk produces, and must not be called a fault.
+    static func classify(_ stats: FrameStatistics) -> Classification {
+        if stats.standardDeviation <= 0.0001 { return .frozen }
+        if stats.standardDeviation > 1.5 { return .live }
+        return .dark
+    }
+
+    static func isDark(_ stats: FrameStatistics) -> Bool {
+        classify(stats) == .dark
+    }
+
+    static func metricID(for device: AVCaptureDevice) -> String {
+        "cam." + device.uniqueID.replacingOccurrences(of: ":", with: "-")
     }
 
     static func label(for device: AVCaptureDevice) -> String {

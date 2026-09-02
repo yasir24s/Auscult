@@ -73,7 +73,14 @@ func runAgentCommand(
     print("\nRunning \(testID)…")
     do {
         let result = try await session.agent.runTest(testID, on: device) { progress in
-            let bar = progress.awaitingUser ? "WAITING FOR YOU" : "\(Int(progress.fraction * 100))%"
+            // A negative fraction marks a keepalive rather than real progress.
+            let bar = if progress.awaitingUser {
+                "WAITING FOR YOU"
+            } else if progress.fraction < 0 {
+                "  ...  "
+            } else {
+                "\(Int(progress.fraction * 100))%"
+            }
             FileHandle.standardError.write(Data("  [\(bar)] \(progress.message)\n".utf8))
         }
         print("""

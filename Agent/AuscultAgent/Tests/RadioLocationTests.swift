@@ -28,6 +28,9 @@ struct BluetoothScanTest: AgentTest {
     }
 
     func run(context: AgentTestContext) async throws -> AgentTestResult {
+        if CBManager.authorization == .notDetermined {
+            context.awaitingUser("Allow Bluetooth access on the device to test the radio")
+        }
         context.progress(0.1, "Powering on the Bluetooth radio")
         let scanner = BluetoothScanner()
         let outcome = await scanner.scan(seconds: 8) { fraction, message in
@@ -69,6 +72,15 @@ struct BluetoothScanTest: AgentTest {
                           detail: "enable it in Settings › Privacy › Bluetooth")
         case .unsupported:
             return result(.fail, "This device reports no Bluetooth support", metrics: metrics)
+        case .unknown:
+            // Never got a state callback at all — almost always an unanswered
+            // permission prompt rather than a hardware fault.
+            metrics.append(AgentMetric(
+                id: "poweredOn", label: "Radio powered on", kind: .bool, raw: "false",
+                verdict: .skipped,
+                note: "the controller never reported a state — the Bluetooth permission "
+                    + "prompt was probably left unanswered on the device"
+            ))
         default:
             metrics.append(.flag("poweredOn", "Radio powered on", false,
                                  shouldBe: true, severityIfNot: .warn,
@@ -113,9 +125,11 @@ private final class BluetoothScanner: NSObject, CBCentralManagerDelegate {
     ) async -> Outcome {
         manager = CBCentralManager(delegate: self, queue: DispatchQueue(label: "auscult.bt"))
 
-        // Wait for the controller to settle before scanning; state starts
-        // .unknown and only becomes meaningful after the first callback.
-        let settleDeadline = Date().addingTimeInterval(3)
+        // Wait for the controller to settle before scanning. State starts
+        // .unknown and only becomes meaningful after the first callback — and
+        // on a first run that callback waits behind a permission prompt, so
+        // three seconds is nowhere near enough.
+        let settleDeadline = Date().addingTimeInterval(20)
         while Date() < settleDeadline {
             if lock.withLock({ outcome.state }) != .unknown { break }
             try? await Task.sleep(nanoseconds: 150_000_000)

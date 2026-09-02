@@ -51,7 +51,12 @@ struct AudioLoopbackTest: AgentTest {
         do {
             // playAndRecord with the speaker override: without the override iOS
             // routes to the receiver, which the mics barely hear.
-            try session.setCategory(.playAndRecord, mode: .measurement,
+            // `.measurement` disables processing but also drops speaker gain
+            // substantially, which is how a working speaker ends up inaudible
+            // to the microphone two centimetres away. `.default` keeps normal
+            // output level, and the analysis does not need a flat response —
+            // only energy at one known frequency.
+            try session.setCategory(.playAndRecord, mode: .default,
                                     options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true, options: [])
             try? session.overrideOutputAudioPort(.speaker)
@@ -79,14 +84,36 @@ struct AudioLoopbackTest: AgentTest {
             }
         }
 
+        // If the media volume is down, no speaker on earth will be heard. This
+        // is by far the most common reason a loopback test "fails", so check it
+        // before blaming the hardware.
+        let outputVolume = Double(session.outputVolume)
+        metrics.append(.graded(
+            "outputVolume", "Media volume", outputVolume * 100, unit: "%",
+            warnAt: 45, failAt: 10, higherIsBetter: true,
+            note: outputVolume < 0.45
+                ? "too low for the microphone to hear the speaker — turn the volume up and re-run"
+                : nil,
+            expectation: "at least 50% for a reliable measurement"
+        ))
+        if outputVolume < 0.1 {
+            return result(.skipped,
+                "Media volume is \((outputVolume * 100).clean)% — turn it up and re-run",
+                metrics: metrics,
+                detail: "the speaker cannot be tested with the volume this low")
+        }
+
         context.progress(0.2, "Playing a 1 kHz tone and recording")
 
         let engine = AVAudioEngine()
         let player = AVAudioPlayerNode()
         engine.attach(player)
 
-        let outputFormat = engine.outputNode.inputFormat(forBus: 0)
-        engine.connect(player, to: engine.mainMixerNode, format: nil)
+        // Generate the tone in the mixer's own output format: a mismatch here
+        // silently produces silence.
+        let outputFormat = engine.mainMixerNode.outputFormat(forBus: 0)
+        engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
+        player.volume = 1.0
 
         guard let tone = Self.makeTone(
             frequency: Self.toneFrequency,
