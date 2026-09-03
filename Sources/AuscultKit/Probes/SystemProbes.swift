@@ -28,11 +28,18 @@ public struct StorageProbe: Probe {
         let keys = ["totalDiskCapacity", "freeDiskSpace", "totalSpaceAvailable"]
             + Self.usageKeys.map(\.1)
         let cfg = await router.tryFetch(.configuratorProperties(keys), for: device)
+        // AFC reports totals over any transport; Configurator is USB-only and
+        // is the only source for the per-category breakdown.
+        let afc = await router.tryFetch(.storageTotals, for: device)
 
         var metrics: [Metric] = []
 
-        let total = cfg.totalDiskCapacity.int ?? device.storageCapacityBytes
-        let free = cfg.freeDiskSpace.int ?? cfg.totalSpaceAvailable.int
+        let total = cfg.totalDiskCapacity.int
+            ?? afc.FSTotalBytes.int
+            ?? device.storageCapacityBytes
+        let free = cfg.freeDiskSpace.int
+            ?? cfg.totalSpaceAvailable.int
+            ?? afc.FSFreeBytes.int
 
         if let total {
             metrics.append(.reading("total", "Total capacity", .bytes(total)))
@@ -79,8 +86,16 @@ public struct StorageProbe: Probe {
             ))
         }
 
+        // Say plainly which part still needs a cable, rather than implying the
+        // whole probe does.
+        if cfg.totalDiskCapacity.int == nil, total != nil {
+            metrics.append(.absent("breakdown", "Usage by category",
+                why: "the per-category split comes from Apple Configurator, which "
+                   + "only works over USB — totals above came from the device itself"))
+        }
+
         guard !metrics.isEmpty else {
-            return result(.unsupported, "No storage figures available — requires a wired connection")
+            return result(.unsupported, "No storage figures available from any transport")
         }
 
         let verdict = rollup(metrics)

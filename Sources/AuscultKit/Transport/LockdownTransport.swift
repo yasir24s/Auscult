@@ -66,6 +66,9 @@ public final class LockdownTransport: DeviceTransport, @unchecked Sendable {
         // so a probe never gets a capability that yields nothing.
         if await pool.canServeBattery(udid: udid) { caps.insert(.batteryGauge) }
         if await pool.canServeNAND(udid: udid) { caps.insert(.nandStats) }
+        // AFC answers volume totals over the same session, so storage no longer
+        // depends on a USB-only tool.
+        if await pool.canServeStorage(udid: udid) { caps.insert(.fileConduit) }
         return caps
     }
 
@@ -88,6 +91,8 @@ public final class LockdownTransport: DeviceTransport, @unchecked Sendable {
             }
         case .mobileGestalt(let keys):
             return try await pool.withRelay(udid: udid) { try $0.mobileGestalt(keys: keys) }
+        case .storageTotals:
+            return try await pool.storageTotals(udid: udid)
         default:
             throw TransportError.unsupportedRequest(request, transport: displayName)
         }
@@ -126,6 +131,7 @@ private actor ConnectionPool {
     private let failureTimeout: TimeInterval = 45
     private var batteryOK: [String: Bool] = [:]
     private var nandOK: [String: Bool] = [:]
+    private var storageOK: [String: Bool] = [:]
 
     func relay(forUDID udid: String) async -> DiagnosticsRelay? {
         try? await establish(udid: udid).relay
@@ -167,6 +173,32 @@ private actor ConnectionPool {
         }) ?? false
         nandOK[udid] = ok
         return ok
+    }
+
+    func canServeStorage(udid: String) async -> Bool {
+        if let cached = storageOK[udid] { return cached }
+        let ok = ((try? await storageTotals(udid: udid))?.exists) ?? false
+        storageOK[udid] = ok
+        return ok
+    }
+
+    /// Volume totals via AFC.
+    ///
+    /// A short-lived client rather than a pooled one: AFC is only consulted
+    /// once or twice per run, and holding the service open for the whole run
+    /// would keep a file-conduit session on the device for no benefit.
+    func storageTotals(udid: String) async throws -> DynamicValue {
+        let entry = try await establish(udid: udid)
+        let client = entry.client
+        return try await BlockingIO.run {
+            let afc = try AFCClient.open(on: client)
+            defer { afc.close() }
+            let info = try afc.deviceInfo()
+            guard !info.isEmpty else {
+                throw TransportError.malformedResponse("AFC returned no device info")
+            }
+            return DynamicValue(info)
+        }
     }
 
     private func establish(udid: String) async throws -> Entry {
@@ -212,5 +244,6 @@ private actor ConnectionPool {
         failures.removeAll()
         batteryOK.removeAll()
         nandOK.removeAll()
+        storageOK.removeAll()
     }
 }

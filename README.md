@@ -292,6 +292,27 @@ The `drain` command says this in its interpretation, because a user who has
 just closed everything and then measures will otherwise draw exactly the wrong
 conclusion.
 
+### Storage without a cable
+
+`com.apple.afc` — the Apple File Conduit — answers `GetDeviceInfo` with the
+volume's byte counts, and runs over the same lockdown session as everything
+else. So storage totals no longer depend on Apple Configurator, which is
+USB-only:
+
+```
+✓ Storage — 109.87 GB free of 511.36 GB
+✓ Free space: 21.49%   expected: keep above 10%
+– Usage by category: — the per-category split comes from Apple Configurator,
+  which only works over USB
+```
+
+AFC is a binary protocol rather than plist-based: a fixed 40-byte header with
+little-endian fields, then NUL-separated strings. One trap worth recording —
+`0x0A` is `GET_FILE_INFO` and `0x0B` is `GET_DEVINFO`, not the reverse.
+Swapping them returns `st_size`, `st_mtime` and friends for the root directory,
+which reads as a perfectly plausible reply until you go looking for
+`FSFreeBytes`.
+
 ### Where the RAM went
 
 Jetsam reports carry a complete process table captured at the moment iOS killed

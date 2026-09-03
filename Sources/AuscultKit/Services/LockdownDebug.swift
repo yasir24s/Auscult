@@ -76,6 +76,19 @@ public enum LockdownDebug {
                 step("⑧ NAND → FAILED: \(error.localizedDescription)")
             }
 
+            // AFC lives on the same session; show what it reports.
+            do {
+                let afc = try await BlockingIO.run { try AFCClient.open(on: client) }
+                let info = try await BlockingIO.run { try afc.deviceInfo() }
+                step("⑩ AFC device info → \(info.count) keys")
+                for key in info.keys.sorted() {
+                    step("     \(key) = \(info[key] ?? "")")
+                }
+                await BlockingIO.runIgnoringErrors { afc.close() }
+            } catch {
+                step("⑩ AFC → FAILED: \(error.localizedDescription)")
+            }
+
             relay.goodbye()
             client.close()
             step("⑨ closed cleanly")

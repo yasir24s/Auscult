@@ -29,6 +29,11 @@ enum BlockingIO {
         }
     }
 
+    /// Fire-and-forget variant for teardown, where a failure changes nothing.
+    static func runIgnoringErrors(_ body: @escaping () -> Void) async {
+        _ = try? await run { body() }
+    }
+
     /// The closure captures sockets and TLS contexts, which are reference types
     /// the pool guarantees single-threaded access to. `Sendable` can't express
     /// that, so we assert it.
