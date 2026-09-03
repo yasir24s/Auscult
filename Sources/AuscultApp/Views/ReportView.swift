@@ -177,10 +177,29 @@ struct HostFooter: View {
     let host: HostInfo
     let capabilityCount: Int
 
+    /// Is a newer bundle sitting on disk than the one we are running?
+    static func isStale(_ stamp: String) -> Bool {
+        guard let executable = Bundle.main.executableURL,
+              let built = try? FileManager.default
+                .attributesOfItem(atPath: executable.path)[.modificationDate] as? Date
+        else { return false }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        guard let stamped = formatter.date(from: stamp) else { return false }
+        // A minute of slack: the plist and the binary are written moments apart.
+        return built.timeIntervalSince(stamped) > 60
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Divider().padding(.bottom, 5)
             Text("Auscult \(host.auscultVersion) · macOS \(host.macOSVersion)")
+            // A rebuilt bundle does not replace a running process, so show
+            // which build this window is actually running.
+            if let stamp = Bundle.main.object(forInfoDictionaryKey: "AuscultBuildStamp") as? String {
+                Text("build \(stamp)\(Self.isStale(stamp) ? " — RELAUNCH FOR A NEWER BUILD" : "")")
+                    .foregroundStyle(Self.isStale(stamp) ? Color.orange : Color.secondary)
+            }
             if let d = host.devicectlVersion { Text("devicectl \(d)") }
             if let c = host.cfgutilVersion { Text(c) }
             if let x = host.xcodeVersion { Text(x) }

@@ -126,9 +126,10 @@ public struct ProbeEngine: Sendable {
         let missing = probe.requiredCapabilities.subtracting(available)
         if !missing.isEmpty {
             let names = missing.map(\.rawValue).sorted().joined(separator: ", ")
-            let hint = device.isReachable
-                ? "no available transport provides: \(names)"
-                : "device is not connected — connect over USB and retry (needs: \(names))"
+            // Don't claim the device is disconnected: it may be perfectly
+            // reachable over Wi-Fi and simply missing a USB-only capability.
+            let hint = "no available transport provides: \(names)"
+                + (device.link == .usb ? "" : " — a USB connection may add it")
             return make(.unsupported, hint)
         }
         return nil

@@ -34,6 +34,11 @@ for b in "$BIN_DIR"/*.bundle; do
     [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
 done
 
+# Record when this bundle was built. A running app keeps its old code in
+# memory after a rebuild, so without a visible stamp it is impossible to tell
+# a stale window from a current one — which cost a debugging session once.
+BUILD_STAMP="$(date '+%Y-%m-%d %H:%M')"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -50,6 +55,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSHighResolutionCapable</key>   <true/>
     <key>LSApplicationCategoryType</key> <string>public.app-category.developer-tools</string>
     <key>NSHumanReadableCopyright</key>  <string>Auscult — iOS device diagnostics</string>
+    <key>AuscultBuildStamp</key>         <string>$BUILD_STAMP</string>
 </dict>
 </plist>
 PLIST

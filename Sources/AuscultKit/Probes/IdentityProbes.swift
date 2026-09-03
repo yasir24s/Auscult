@@ -252,19 +252,35 @@ public struct ConnectivityProbe: Probe {
                 .string("\(count) capabilit\(count == 1 ? "y" : "ies")")))
         }
 
-        // Wired is not just faster — several deep services are USB-only.
-        if !device.isSimulator && device.link != .usb {
+        // Judge connectivity by what actually resolved, not by a flag.
+        //
+        // `isReachable` infers from transport and tunnel state, and for a device
+        // reachable only over Wi-Fi it says "no" while eight capabilities
+        // resolve perfectly well — a report that contradicts itself. The count
+        // of working capabilities is the honest measure.
+        let reachable = caps.count > 1
+
+        // Only advise a cable when it would actually add something.
+        let deepCaps: Set<Capability> = [.batteryGauge, .nandStats, .crashLogs, .configuratorProperties]
+        let missingDeep = deepCaps.subtracting(caps.keys)
+        if !device.isSimulator, !missingDeep.isEmpty {
             metrics.append(Metric(
-                id: "wiredAdvice", label: "Coverage", value: .string("reduced"),
-                verdict: .warn,
-                note: "connect over USB for battery gauge, NAND wear, and crash log access"
+                id: "wiredAdvice", label: "Coverage", value: .string("partial"),
+                verdict: .info,
+                note: "a USB connection would add: "
+                    + missingDeep.map(\.rawValue).sorted().joined(separator: ", ")
             ))
         }
 
         let verdict = rollup(metrics)
-        let summary = device.isReachable
-            ? "Connected via \(device.link.rawValue) with \(caps.count) capabilities"
-            : "Not currently connected — reconnect to run the full suite"
-        return result(device.isReachable ? verdict : .skipped, summary, metrics: metrics)
+        let summary: String
+        if !reachable {
+            summary = "Not reachable — no capabilities resolved beyond cached identity"
+        } else if device.link == .usb {
+            summary = "Connected over USB with \(caps.count) capabilities"
+        } else {
+            summary = "Reachable over \(device.link.rawValue) with \(caps.count) capabilities"
+        }
+        return result(reachable ? verdict : .skipped, summary, metrics: metrics)
     }
 }
