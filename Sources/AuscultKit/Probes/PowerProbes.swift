@@ -216,8 +216,13 @@ public struct LiveDrainProbe: Probe {
         // which on a media-heavy device runs for hours at several watts — and a
         // reading taken then describes the rebuild, not the device.
         var maintenance: [String] = []
+        var hoursSinceUpdate: Double?
         if let listing = try? await router.fetch(.crashLogIndex, for: device) {
-            maintenance = DiagnosticReportIndex.parse(listing).maintenanceInProgress()
+            let index = DiagnosticReportIndex.parse(listing)
+            maintenance = index.maintenanceInProgress()
+            if let interval = index.timeSinceSoftwareUpdate(), interval < 48 * 3600 {
+                hoursSinceUpdate = interval / 3600
+            }
         }
 
         for index in 0..<sampleCount {
@@ -281,6 +286,19 @@ public struct LiveDrainProbe: Probe {
                     : "charging is paused, so this is the device's own consumption"
             ))
         }
+        if let hours = hoursSinceUpdate {
+            metrics.append(Metric(
+                id: "recentUpdate", label: "OS updated recently",
+                value: .string(hours < 1
+                    ? "\(Int(hours * 60)) minutes ago"
+                    : "\(hours.oneDecimal) hours ago"),
+                verdict: .warn,
+                note: "an OS update forces a reboot and a full rebuild of Spotlight, "
+                    + "photo analysis and iCloud state. Expect hours of elevated draw "
+                    + "afterwards that says nothing about normal behaviour — allow a "
+                    + "day before treating any figure as a baseline"
+            ))
+        }
         if !maintenance.isEmpty {
             metrics.append(Metric(
                 id: "maintenance", label: "System maintenance running",
@@ -308,7 +326,8 @@ public struct LiveDrainProbe: Probe {
         // System load is measurable whether or not the charger is attached, so
         // it is the figure that always means something.
         // Any of these makes a reading unrepresentative of steady state.
-        let disturbed = duringDiagnosticRun || charging || !maintenance.isEmpty
+        let disturbed = duringDiagnosticRun || charging
+            || !maintenance.isEmpty || hoursSinceUpdate != nil
         let thresholds = Self.idleThresholds(for: device.family)
 
         let loads = samples.compactMap(\.systemLoadMilliwatts)
@@ -317,6 +336,20 @@ public struct LiveDrainProbe: Probe {
             // Two completely different yardsticks. With the panel lit, several
             // watts is expected and grading against an idle figure would flag
             // every healthy phone; with it dark, several watts is the finding.
+            // While charging, this register carries charge power as well as
+            // system consumption — a phone on a fast charger reported 26.8 W,
+            // which is not a system load at all. Grading that produces a
+            // confident FAIL about a number that measures something else, so
+            // the reading is reported without a verdict instead.
+            if charging {
+                metrics.append(Metric(
+                    id: "meanSystemLoad", label: "Mean system load (not gradeable)",
+                    value: .double(meanLoad), unit: "mW", verdict: .unsupported,
+                    note: "charging — this figure includes charge power and is not "
+                        + "a measure of consumption. Unplug and re-run",
+                    expectation: "measure unplugged, or at 100% when charging pauses"
+                ))
+            } else {
             metrics.append(.graded(
                 "meanSystemLoad", "Mean system load", meanLoad, unit: "mW",
                 // Strict thresholds only when the reading is clean: display
@@ -338,6 +371,7 @@ public struct LiveDrainProbe: Probe {
                       + "under \(thresholds.warn.zeroDecimal) mW"
                     : "several times the idle figure is normal with the screen on"
             ))
+            }
             metrics.append(.reading("peakSystemLoad", "Peak system load",
                 .double(loads.max() ?? 0), unit: "mW"))
             metrics.append(.reading("minSystemLoad", "Lowest system load",

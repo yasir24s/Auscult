@@ -59,6 +59,8 @@ public struct DiagnosticReportIndex: Sendable {
         case jetsam = "Memory kill"
         /// Kernel panic.
         case panic = "Kernel panic"
+        /// Software-update machinery. Not a fault; a date stamp.
+        case softwareUpdate = "Software update"
         /// Written when the battery runs flat. The richest single source for a
         /// drain investigation: it records the awake/standby split, which app
         /// was in the foreground, and every power assertion held at the moment
@@ -137,6 +139,9 @@ public struct DiagnosticReportIndex: Sendable {
         if lower.hasPrefix("stacks-") { return .stackshot }
         if lower.hasPrefix("analytics-") { return .analytics }
         if lower.hasSuffix(".ips") || lower.hasSuffix(".crash") { return .crash }
+        // Not a report, but its timestamp dates the last OS update, which is
+        // the single most useful thing to know before trusting a drain figure.
+        if lower.hasPrefix("ota_patch") { return .softwareUpdate }
         return nil
     }
 
@@ -225,6 +230,33 @@ public struct DiagnosticReportIndex: Sendable {
         "spotlightknowledged", "knowledgeconstructiond", "assetsd",
         "biomesyncd", "corespotlightd", "mediaremoted",
     ]
+
+    /// Filenames written by the software-update machinery.
+    ///
+    /// A completed OS update looks exactly like an in-progress one from the
+    /// outside: both leave `ota_patch.txt` and `UpdateBrainService` reports
+    /// with recent timestamps. What distinguishes them is that the *completion*
+    /// log is the last thing written — so the useful signal is not "an update
+    /// is running" but "an update happened recently", which for drain purposes
+    /// means the same thing: the device is re-indexing everything.
+    static let softwareUpdateArtefacts = ["ota_patch", "UpdateBrainService", "MobileSoftwareUpdate"]
+
+    /// Did the OS update recently? Returns how long ago, if so.
+    ///
+    /// An update forces a reboot and a full rebuild of Spotlight, photo
+    /// analysis and iCloud state — hours of elevated draw that says nothing
+    /// about the device's normal behaviour.
+    public func timeSinceSoftwareUpdate() -> TimeInterval? {
+        let stamps = entries.compactMap { entry -> Date? in
+            let name = entry.filename
+            guard Self.softwareUpdateArtefacts.contains(where: { name.contains($0) })
+            else { return nil }
+            return entry.date
+        }
+        // Also catch artefacts that classify() skipped, like ota_patch.txt.
+        guard let newest = stamps.max() else { return nil }
+        return Date().timeIntervalSince(newest)
+    }
 
     /// Maintenance daemons that have exceeded a resource limit recently.
     ///
