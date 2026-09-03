@@ -26,6 +26,13 @@ final class AppModel {
     var transports: [TransportStatus] = []
     var runState: RunState = .idle
     var discoveryErrors: [String] = []
+    /// Capabilities that actually resolved per device, measured during a scan.
+    ///
+    /// The UI used `DeviceSnapshot.isReachable`, which infers from transport
+    /// and tunnel state and says "offline" for a device that answers perfectly
+    /// well over Wi-Fi. Counting what really resolved is the same question the
+    /// report asks, so the window and the report can no longer disagree.
+    var capabilityCounts: [DeviceSnapshot.ID: Int] = [:]
     var isDiscovering = false
     var showSimulators = false
 
@@ -85,10 +92,37 @@ final class AppModel {
         if let current = selectedDeviceID, !found.contains(where: { $0.id == current }) {
             selectedDeviceID = nil
         }
+        await measureReachability(for: found)
+
         if selectedDeviceID == nil {
-            selectedDeviceID = visibleDevices.first(where: \.isReachable)?.id
+            selectedDeviceID = visibleDevices.first { isReachable($0) }?.id
                 ?? visibleDevices.first?.id
         }
+    }
+
+    /// Ask the router what each device can actually do.
+    ///
+    /// Concurrent because an unreachable device costs a timeout, and three of
+    /// them in series would make every scan feel broken.
+    private func measureReachability(for devices: [DeviceSnapshot]) async {
+        let router = session.router
+        var counts: [DeviceSnapshot.ID: Int] = [:]
+        await withTaskGroup(of: (DeviceSnapshot.ID, Int).self) { group in
+            for device in devices where !device.isSimulator {
+                group.addTask { (device.id, await router.capabilities(for: device).count) }
+            }
+            for await (id, count) in group { counts[id] = count }
+        }
+        capabilityCounts = counts
+    }
+
+    /// More than bare cached identity resolved, so the device is answering.
+    func isReachable(_ device: DeviceSnapshot) -> Bool {
+        (capabilityCounts[device.id] ?? 0) > 1
+    }
+
+    func capabilityCount(_ device: DeviceSnapshot) -> Int {
+        capabilityCounts[device.id] ?? 0
     }
 
     // MARK: Running
@@ -117,6 +151,10 @@ final class AppModel {
             }
             guard !Task.isCancelled else { return }
             reports[device.id] = report
+            // A full run establishes sessions the initial scan did not, so it
+            // resolves more capabilities than the scan-time probe saw. Adopt
+            // the run's count so the header stops disagreeing with the report.
+            capabilityCounts[device.id] = report.capabilities.count
             runState = .finished
 
             // Dev hook: with AUSCULT_AUTORUN set, dump the full report so a

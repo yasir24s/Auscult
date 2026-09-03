@@ -10,7 +10,11 @@ struct DeviceDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DeviceHeader(device: device, report: model.selectedReport)
+            DeviceHeader(
+                device: device, report: model.selectedReport,
+                isReachable: model.isReachable(device),
+                capabilityCount: model.capabilityCount(device)
+            )
             Divider()
 
             if model.runState.isRunning {
@@ -59,6 +63,8 @@ struct DeviceDetailView: View {
 struct DeviceHeader: View {
     let device: DeviceSnapshot
     let report: DiagnosticReport?
+    let isReachable: Bool
+    let capabilityCount: Int
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -77,8 +83,8 @@ struct DeviceHeader: View {
                     if device.isSimulator { Tag("simulator", .gray) }
                     if device.isPrereleaseOS { Tag("prerelease", .purple) }
                     Tag(device.link.rawValue, device.link == .usb ? .blue : .gray)
-                    Tag(device.isReachable ? "connected" : "offline",
-                        device.isReachable ? .green : .orange)
+                    Tag(isReachable ? "\(capabilityCount) capabilities" : "offline",
+                        isReachable ? .green : .orange)
                     if let s = device.serialNumber { Tag(s, .secondary) }
                 }
                 .padding(.top, 2)
@@ -157,9 +163,10 @@ struct ReadyToRunView: View {
                 .foregroundStyle(.tertiary)
             Text("Ready to diagnose").font(.title3.weight(.medium))
 
-            if !device.isReachable {
-                Text("This device isn't currently connected. Auscult will report what it can "
-                     + "from cached identity, but hardware readings need a live USB link.")
+            if !model.isReachable(device) {
+                Text("This device isn't answering. Auscult will report what it can from "
+                     + "cached identity. Unlock it and make sure it is on this network, "
+                     + "or connect it over USB.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

@@ -16,8 +16,12 @@ struct DeviceSidebar: View {
                         .font(.callout)
                 } else {
                     ForEach(model.visibleDevices) { device in
-                        DeviceRow(device: device, verdict: model.reports[device.id]?.overallVerdict)
-                            .tag(device.id)
+                        DeviceRow(
+                            device: device,
+                            verdict: model.reports[device.id]?.overallVerdict,
+                            isReachable: model.isReachable(device)
+                        )
+                        .tag(device.id)
                     }
                 }
             }
@@ -84,12 +88,13 @@ struct DeviceSidebar: View {
 struct DeviceRow: View {
     let device: DeviceSnapshot
     let verdict: Verdict?
+    let isReachable: Bool
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: device.symbolName)
                 .font(.title3)
-                .foregroundStyle(device.isReachable ? .primary : .tertiary)
+                .foregroundStyle(isReachable ? .primary : .tertiary)
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -102,8 +107,9 @@ struct DeviceRow: View {
                 HStack(spacing: 4) {
                     if device.isSimulator { Tag("sim", .gray) }
                     if device.isPrereleaseOS { Tag("beta", .purple) }
-                    if !device.isReachable { Tag("offline", .orange) }
+                    if !isReachable { Tag("offline", .orange) }
                     else if device.link == .usb { Tag("usb", .blue) }
+                    else { Tag("wi-fi", .teal) }
                 }
             }
 
