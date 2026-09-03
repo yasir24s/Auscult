@@ -19,7 +19,7 @@ public struct PowerTelemetryProbe: Probe {
     public let title = "Power Draw"
     public let section = ReportSection.power
     public let requiredCapabilities: Set<Capability> = [.batteryGauge]
-    public var applicableFamilies: Set<DeviceFamily> { [.iPhone, .iPad, .iPod] }
+    public var applicableFamilies: Set<DeviceFamily> { [.iPhone, .iPad, .iPod, .appleWatch] }
 
     /// Typical whole-day average for a healthy iPhone is 500–900 mW. Sustained
     /// averages far above that are what "it drains fast" actually means.
@@ -155,10 +155,26 @@ public struct LiveDrainProbe: Probe {
     public let title = "Live Power Draw"
     public let section = ReportSection.power
     public let requiredCapabilities: Set<Capability> = [.batteryGauge]
-    public var applicableFamilies: Set<DeviceFamily> { [.iPhone, .iPad, .iPod] }
+    public var applicableFamilies: Set<DeviceFamily> { [.iPhone, .iPad, .iPod, .appleWatch] }
 
     private let sampleCount: Int
     private let interval: TimeInterval
+
+    /// Idle power thresholds, in milliwatts, by device class.
+    ///
+    /// These cannot be one set of numbers. An Apple Watch runs its whole system
+    /// on a ~1 Wh cell and idles in the tens of milliwatts; an iPad has ten
+    /// times the battery and a much larger display controller. Grading a Watch
+    /// against an iPhone's thresholds would call healthy hardware faulty.
+    static func idleThresholds(for family: DeviceFamily) -> (warn: Double, fail: Double) {
+        switch family {
+        case .appleWatch: (120, 300)
+        case .iPhone, .iPod: (600, 1200)
+        case .iPad: (900, 1800)
+        case .appleTV: (3000, 6000)   // mains powered; only a sanity bound
+        default: (600, 1200)
+        }
+    }
 
     public init(sampleCount: Int = 12, interval: TimeInterval = 2.5) {
         self.sampleCount = sampleCount
@@ -291,6 +307,10 @@ public struct LiveDrainProbe: Probe {
 
         // System load is measurable whether or not the charger is attached, so
         // it is the figure that always means something.
+        // Any of these makes a reading unrepresentative of steady state.
+        let disturbed = duringDiagnosticRun || charging || !maintenance.isEmpty
+        let thresholds = Self.idleThresholds(for: device.family)
+
         let loads = samples.compactMap(\.systemLoadMilliwatts)
         if !loads.isEmpty {
             let meanLoad = loads.reduce(0, +) / Double(loads.count)
@@ -302,11 +322,11 @@ public struct LiveDrainProbe: Probe {
                 // Strict thresholds only when the reading is clean: display
                 // off, charging paused, and no diagnostic load.
                 warnAt: screenOff
-                    ? (duringDiagnosticRun || charging || !maintenance.isEmpty ? 2500 : 600)
-                    : 3000,
+                    ? (disturbed ? thresholds.warn * 4 : thresholds.warn)
+                    : thresholds.warn * 5,
                 failAt: screenOff
-                    ? (duringDiagnosticRun || charging || !maintenance.isEmpty ? 5000 : 1200)
-                    : 5000,
+                    ? (disturbed ? thresholds.fail * 4 : thresholds.fail)
+                    : thresholds.fail * 4,
                 higherIsBetter: false,
                 note: screenOff
                     ? (charging
@@ -314,8 +334,9 @@ public struct LiveDrainProbe: Probe {
                         : "display off and not charging, so this is what the device consumes doing nothing")
                     : "display on, so most of this is the panel",
                 expectation: screenOff
-                    ? "an idle device with the screen off sits under 400 mW"
-                    : "1–3 W is normal with the screen on"
+                    ? "an idle \(device.family.rawValue) with the screen off should stay "
+                      + "under \(thresholds.warn.zeroDecimal) mW"
+                    : "several times the idle figure is normal with the screen on"
             ))
             metrics.append(.reading("peakSystemLoad", "Peak system load",
                 .double(loads.max() ?? 0), unit: "mW"))
@@ -388,7 +409,7 @@ public struct PowerHistoryProbe: Probe {
     public let title = "Power Event History"
     public let section = ReportSection.power
     public let requiredCapabilities: Set<Capability> = [.batteryGauge]
-    public var applicableFamilies: Set<DeviceFamily> { [.iPhone, .iPad, .iPod] }
+    public var applicableFamilies: Set<DeviceFamily> { [.iPhone, .iPad, .iPod, .appleWatch] }
 
     public init() {}
 

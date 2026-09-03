@@ -255,6 +255,16 @@ public enum BatteryReference {
         // iPhone 13 / SE
         "iPhone14,5": 3227, "iPhone14,2": 3095, "iPhone14,3": 4352, "iPhone14,4": 2406,
         "iPhone14,6": 2018,
+
+        // Apple Watch. Two orders of magnitude smaller than a phone, which is
+        // why every threshold that touches these has to be family-aware.
+        "Watch6,14": 282, "Watch6,15": 308,      // Series 9 41 / 45 mm
+        "Watch6,16": 282, "Watch6,17": 308,
+        "Watch7,1": 327, "Watch7,2": 355,        // Series 10 42 / 46 mm
+        "Watch7,3": 327, "Watch7,4": 355,
+        "Watch6,18": 564,                        // Ultra 2
+        "Watch7,5": 564,
+        "Watch6,10": 245, "Watch6,11": 296,      // SE 2 40 / 44 mm
     ]
 
     public static func designCapacity(forProductType type: String?) -> Int? {

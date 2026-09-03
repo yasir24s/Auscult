@@ -23,6 +23,7 @@ func usage() -> String {
                                         (--seconds N, --wait N to count down first)
       auscult agent [udid]              Connect to the on-device agent, list its tests
       auscult agent [udid] --test <id>  Run one on-device hardware test
+      auscult pair                      What this Mac can reach, and how to reach more
       auscult usbmux                    Inspect the mux layer and pair records
       auscult pairtest <file>           Verify a pair record builds a TLS identity
       auscult parse-listing <file>      Re-parse a saved file listing, no device needed
@@ -192,6 +193,9 @@ case "run":
         rendered.append(try render(report))
     }
     try write(rendered.joined(separator: flag("--json") ? "\n" : "\n\n"))
+
+case "pair":
+    await runPairCommand(session: session)
 
 case "parse-listing":
     guard let path = positionals.first else {
