@@ -7,7 +7,10 @@ import Foundation
 /// outside. Walking them one at a time with short timeouts is the difference
 /// between a five-second diagnosis and guessing.
 public enum LockdownDebug {
-    public static func trace(udid: String?) async -> String {
+    /// - Parameter preferNetwork: force the network sighting even when a cable
+    ///   is attached. Needed to prove the relay works unplugged *before* asking
+    ///   someone to unplug, rather than discovering it does not afterwards.
+    public static func trace(udid: String?, preferNetwork: Bool = false) async -> String {
         var log: [String] = []
         func step(_ s: String) { log.append(s) }
 
@@ -17,7 +20,10 @@ public enum LockdownDebug {
             step("① usbmux ListDevices → \(all.count) sighting(s)")
 
             let candidates = udid == nil ? all : all.filter { $0.serialNumber == udid! }
-            guard let device = candidates.first(where: \.isUSB) ?? candidates.first else {
+            let ordered = preferNetwork
+                ? (candidates.first(where: { !$0.isUSB }) ?? candidates.first)
+                : (candidates.first(where: \.isUSB) ?? candidates.first)
+            guard let device = ordered else {
                 step("   no matching device — connect it over USB")
                 return log.joined(separator: "\n")
             }
@@ -82,13 +88,17 @@ public enum LockdownDebug {
     /// Dump an IORegistry node, by name or by class, so a new OS build's actual
     /// layout can be inspected rather than guessed at.
     public static func ioregistry(
-        udid: String?, entryName: String?, entryClass: String?
+        udid: String?, entryName: String?, entryClass: String?,
+        preferNetwork: Bool = false
     ) async -> String {
         do {
             let mux = UsbmuxClient()
             let all = try await BlockingIO.run { try mux.listDevices() }
             let candidates = udid == nil ? all : all.filter { $0.serialNumber == udid! }
-            guard let device = candidates.first(where: \.isUSB) ?? candidates.first else {
+            let ordered = preferNetwork
+                ? (candidates.first(where: { !$0.isUSB }) ?? candidates.first)
+                : (candidates.first(where: \.isUSB) ?? candidates.first)
+            guard let device = ordered else {
                 return "no matching device attached over USB"
             }
             let deviceID = device.deviceID

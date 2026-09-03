@@ -350,7 +350,9 @@ public struct LiveDrainProbe: Probe {
         if plugged {
             metrics.append(.reading("chargeRate", "Mean charge rate",
                 .double(meanBattery), unit: "mW",
-                note: "unplug the device to measure discharge directly"))
+                note: "unplug the device and re-run for a true discharge figure — "
+                    + "the diagnostics relay works over Wi-Fi, so the cable is "
+                    + "not required for the measurement"))
         } else {
             // Discharging: this is the real drain figure.
             let drain = abs(meanBattery)

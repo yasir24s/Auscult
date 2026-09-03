@@ -241,7 +241,7 @@ case "ioreg":
     ))
 
 case "relay":
-    emit(await LockdownDebug.trace(udid: positionals.first))
+    emit(await LockdownDebug.trace(udid: positionals.first, preferNetwork: flag("--network")))
 
 case "pairtest":
     guard let path = positionals.first else {
