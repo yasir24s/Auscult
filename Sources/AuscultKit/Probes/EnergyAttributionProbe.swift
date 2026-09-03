@@ -256,7 +256,44 @@ public struct AccessoryHealthProbe: Probe {
                 guard !report.process.hasPrefix("Analytics") else { continue }
                 counts[report.process, default: 0] += 1
             }
-            if let (name, count) = counts.max(by: { $0.value < $1.value }), count >= 5 {
+            let worst = counts.max { $0.value < $1.value }
+
+            // Sample the worst offender's own report. The header carries the
+            // accessory's model and OS; the body carries the termination reason
+            // — and it must be *that app's* reason, not whichever report
+            // happened to be first.
+            let sampleEntry = reports.first {
+                $0.kind == .crash && $0.process == (worst?.key ?? "")
+            } ?? reports.first { $0.kind == .crash && !$0.process.hasPrefix("Analytics") }
+
+            if let sample = sampleEntry,
+               let payload = try? await router.fetch(.crashLog(name: sample.path), for: device),
+               let text = payload.text.string,
+               let summary = CrashReportSummary.parse(text) {
+                if let model = summary.modelCode {
+                    metrics.append(.reading("acc.\(short).model", "Accessory \(short) — hardware",
+                                            .string(AccessoryNames.describe(model)),
+                                            note: model))
+                }
+                if let train = summary.osTrain {
+                    metrics.append(.reading("acc.\(short).os", "Accessory \(short) — system",
+                        .string(train + (summary.osBuild.map { " (\($0))" } ?? ""))))
+                }
+                if let reason = summary.reasonSummary {
+                    metrics.append(Metric(
+                        id: "acc.\(short).reason",
+                        label: "Accessory \(short) — why \(summary.process) fails",
+                        value: .string(reason),
+                        verdict: .info,
+                        note: [
+                            summary.terminationNamespace.map { "terminated by \($0)" },
+                            summary.appVersion.map { "app version \($0)" },
+                        ].compactMap { $0 }.joined(separator: ", ")
+                    ))
+                }
+            }
+
+            if let (name, count) = worst, count >= 5 {
                 // A repeatedly crashing app costs battery on the accessory:
                 // every relaunch repeats its startup work on a very small cell.
                 let verdict: Verdict = count >= 25 ? .fail : .warn

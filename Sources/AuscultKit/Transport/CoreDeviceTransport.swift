@@ -10,12 +10,13 @@ import Foundation
 /// The trade-off is surface area — CoreDevice deliberately exposes no battery
 /// gas gauge or NAND wear. Those come from `LockdownTransport`; here we take the
 /// breadth and the immunity.
-public struct CoreDeviceTransport: DeviceTransport {
+public final class CoreDeviceTransport: DeviceTransport, @unchecked Sendable {
     public let identifier = "coredevice"
     public let displayName = "CoreDevice (devicectl)"
     public let priority = 10
 
     private let xcrun: String
+    private let liveness = LivenessCache()
 
     public init(xcrunPath: String = "/usr/bin/xcrun") { self.xcrun = xcrunPath }
 
@@ -201,8 +202,14 @@ public struct CoreDeviceTransport: DeviceTransport {
         // Identity always works — we already have it from discovery.
         var caps: Set<Capability> = [.deviceIdentity]
 
-        // Everything else needs a live connection to the device.
-        guard device.isReachable else { return caps }
+        // Reachability is measured, not inferred.
+        //
+        // `connection.state` reports whether a tunnel is *currently* up, which
+        // for a network device is almost always "disconnected" — CoreDevice
+        // raises the tunnel on demand. Trusting that field made every probe
+        // report a perfectly reachable device as offline. So for anything not
+        // on a cable, ask the device something cheap and see if it answers.
+        guard await isLive(device) else { return caps }
 
         caps.formUnion([.displayInfo, .screenCapture, .sysdiagnose, .crashLogs])
 
@@ -226,9 +233,10 @@ public struct CoreDeviceTransport: DeviceTransport {
         guard let selector = device.devicectlSelector else {
             throw TransportError.deviceUnreachable(device.displayName)
         }
-        // Fail fast rather than letting every probe pay devicectl's ~10s
-        // connect timeout against a device we already know is offline.
-        guard device.isReachable else {
+        // Fail fast rather than letting every probe pay devicectl's connect
+        // timeout against a device that is genuinely away. Uses the measured
+        // answer, so a paired network device with no tunnel up still works.
+        guard await isLive(device) else {
             throw TransportError.deviceUnreachable(device.displayName)
         }
         switch request {
@@ -270,6 +278,33 @@ public struct CoreDeviceTransport: DeviceTransport {
         default:
             throw TransportError.unsupportedRequest(request, transport: displayName)
         }
+    }
+
+    /// Can we actually talk to this device right now?
+    ///
+    /// A wired device is trusted without asking. Anything else gets one short
+    /// query, cached — cheap enough to run per device, and far more accurate
+    /// than reading a transient tunnel flag.
+    private func isLive(_ device: DeviceSnapshot) async -> Bool {
+        if device.link == .usb { return true }
+        guard device.pairing != .unpaired, let selector = device.devicectlSelector
+        else { return false }
+        if let cached = await liveness.value(for: device.id) { return cached }
+
+        let alive: Bool
+        do {
+            // A short timeout: a device that is awake and paired answers in
+            // about a second, and one that is asleep should not stall the run.
+            let result = try await Shell.run(xcrun, [
+                "devicectl", "device", "info", "details", "--device", selector,
+                "--json-output", "-", "--quiet",
+            ], timeout: 20)
+            alive = result.succeeded || DynamicValue.parseJSON(result.stdout).result.exists
+        } catch {
+            alive = false
+        }
+        await liveness.set(alive, for: device.id)
+        return alive
     }
 
     /// Copy one file out of the crash-log domain and return its text.
@@ -376,4 +411,12 @@ enum FlexibleDate {
     static func parse(_ s: String) -> Date? {
         withFraction.date(from: s) ?? plain.date(from: s)
     }
+}
+
+
+/// Caches the measured liveness of each device for the duration of a run.
+private actor LivenessCache {
+    private var results: [String: Bool] = [:]
+    func value(for id: String) -> Bool? { results[id] }
+    func set(_ value: Bool, for id: String) { results[id] = value }
 }

@@ -264,7 +264,8 @@ public enum BatteryReference {
         "Watch7,3": 327, "Watch7,4": 355,
         "Watch6,18": 564,                        // Ultra 2
         "Watch7,5": 564,
-        "Watch6,10": 245, "Watch6,11": 296,      // SE 2 40 / 44 mm
+        "Watch6,10": 245, "Watch6,11": 296,      // SE 2 40 / 44 mm GPS
+        "Watch6,12": 245, "Watch6,13": 296,      // SE 2 40 / 44 mm cellular
     ]
 
     public static func designCapacity(forProductType type: String?) -> Int? {

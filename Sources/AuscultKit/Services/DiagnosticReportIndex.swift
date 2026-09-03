@@ -368,6 +368,76 @@ public struct ResourceReport: Sendable {
 }
 
 
+/// The identity and failure reason inside a modern `.ips` crash report.
+///
+/// Counting crashes says an app is unhealthy; the termination record says *why*,
+/// and on a Watch the why is usually specific and fixable. A watchOS app killed
+/// for "WatchConnectivity watchdog transgression" is being woken to process data
+/// from its phone and overrunning a two-second CPU budget — a very different
+/// problem from a plain crash, and one that costs battery every time.
+public struct CrashReportSummary: Sendable {
+    public var process: String
+    public var bundleID: String?
+    public var appVersion: String?
+    /// Hardware identifier of the device the report came from, e.g. "Watch6,13".
+    public var modelCode: String?
+    /// OS train, e.g. "Watch OS 26.6".
+    public var osTrain: String?
+    public var osBuild: String?
+    /// Termination namespace: CAROUSEL, JETSAM, SPRINGBOARD, DYLD…
+    public var terminationNamespace: String?
+    /// Human-readable reason, verbatim from the report.
+    public var terminationDetail: String?
+    public var exceptionType: String?
+    public var signal: String?
+    public var date: Date?
+
+    /// One line describing the failure, for a report.
+    public var reasonSummary: String? {
+        if let detail = terminationDetail, !detail.isEmpty {
+            // These details are often several sentences; keep the first.
+            let firstSentence = detail.split(separator: ".").first.map {
+                String($0).trimmingCharacters(in: .whitespaces)
+            }
+            return firstSentence.map { "\($0)." } ?? detail
+        }
+        if let namespace = terminationNamespace { return "terminated by \(namespace)" }
+        if let exceptionType { return exceptionType }
+        return nil
+    }
+
+    public static func parse(_ text: String) -> CrashReportSummary? {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+        guard !lines.isEmpty, let headerData = lines[0].data(using: .utf8) else { return nil }
+        let header = DynamicValue.parseJSON(headerData)
+
+        var summary = CrashReportSummary(
+            process: header.firstPresent("app_name", "name", "procName").string ?? "unknown"
+        )
+        summary.bundleID = header.bundleID.string
+        summary.appVersion = header.app_version.string
+
+        // The body is a second JSON document on the remaining lines.
+        if lines.count > 1,
+           let bodyData = lines.dropFirst().joined(separator: "\n").data(using: .utf8) {
+            let body = DynamicValue.parseJSON(bodyData)
+            summary.modelCode = body.modelCode.string
+            summary.osTrain = body.osVersion.train.string
+            summary.osBuild = body.osVersion.build.string
+            summary.terminationNamespace = body.termination.namespace.string
+            // `details` is an array of strings; the first carries the reason.
+            summary.terminationDetail = body.termination.details.array.first?.string
+                ?? body.termination.reasons.array.first?.string
+            summary.exceptionType = body.exception.type.string
+            summary.signal = body.exception.signal.string
+            if summary.process == "unknown" {
+                summary.process = body.procName.string ?? "unknown"
+            }
+        }
+        return summary
+    }
+}
+
 /// One `LowBatteryLog` report: the state of the device when the battery died.
 ///
 /// This is the most informative artefact iOS produces for a drain complaint. It
