@@ -293,6 +293,36 @@ public struct AccessoryHealthProbe: Probe {
                 }
             }
 
+            // A daily rate, not just a total. A count only ever grows, so it
+            // cannot show whether a fix worked; the rate can, and the most
+            // recent crash says whether the problem is still live.
+            if let (name, _) = worst {
+                let crashDates = reports
+                    .filter { $0.kind == .crash && $0.process == name }
+                    .compactMap(\.date)
+                    .sorted()
+                if let earliest = crashDates.first, let latest = crashDates.last {
+                    let days = max(latest.timeIntervalSince(earliest) / 86400, 1)
+                    let perDay = Double(crashDates.count) / days
+                    metrics.append(.graded(
+                        "acc.\(short).crashRate", "Accessory \(short) — \(name) crash rate",
+                        perDay, unit: "/day",
+                        warnAt: 1, failAt: 5, higherIsBetter: false,
+                        note: "over \(Int(days)) days. Re-run after reinstalling the app: "
+                            + "the rate is what shows whether it worked, since the total "
+                            + "can only ever climb",
+                        expectation: "0 for a healthy app"
+                    ))
+                    let sinceLast = Date().timeIntervalSince(latest) / 3600
+                    metrics.append(.reading(
+                        "acc.\(short).lastCrash", "Accessory \(short) — most recent crash",
+                        .string(latest.formatted(date: .abbreviated, time: .shortened)),
+                        note: sinceLast > 24
+                            ? "none in \(Int(sinceLast / 24)) days — the problem may be resolved"
+                            : "\(Int(sinceLast))h ago, so the problem is still live"))
+                }
+            }
+
             if let (name, count) = worst, count >= 5 {
                 // A repeatedly crashing app costs battery on the accessory:
                 // every relaunch repeats its startup work on a very small cell.
