@@ -18,6 +18,17 @@ public enum DeviceFamily: String, Codable, Sendable {
 
     /// Simulators can never yield hardware truth — only software checks apply.
     public var isPhysicalCandidate: Bool { self != .unknown }
+
+    /// Does this class of device run on a battery?
+    ///
+    /// A drain measurement against an Apple TV is meaningless — it is mains
+    /// powered — so anything picking a device automatically has to know.
+    public var hasBattery: Bool {
+        switch self {
+        case .iPhone, .iPad, .iPod, .appleWatch, .appleVision: true
+        case .appleTV, .mac, .unknown: false
+        }
+    }
 }
 
 /// Immutable-ish identity + state snapshot of a target device.

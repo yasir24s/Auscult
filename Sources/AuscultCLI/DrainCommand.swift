@@ -1,6 +1,23 @@
 import Foundation
 import AuscultKit
 
+/// Pick the device whose battery can actually be read.
+///
+/// Selecting on `isReachable` was wrong twice over: that property infers
+/// reachability from a transient tunnel flag, and reachability is not the same
+/// question as "can this device's gas gauge be read". Asking the router which
+/// devices actually resolve `.batteryGauge` answers the real question, and
+/// costs one capability probe per candidate.
+private func firstMeasurable(
+    _ devices: [DeviceSnapshot], session: DiagnosticSession
+) async -> DeviceSnapshot? {
+    // Wired first: same data, less latency.
+    for device in devices.sorted(by: { ($0.link == .usb ? 0 : 1) < ($1.link == .usb ? 0 : 1) }) {
+        if await session.router.has(.batteryGauge, for: device) { return device }
+    }
+    return nil
+}
+
 /// `auscult drain` — a controlled battery drain measurement.
 ///
 /// The ordinary probe reports whatever the device happens to be doing, which is
@@ -13,15 +30,30 @@ func runDrainCommand(
 ) async {
     let (devices, _) = await session.devices()
     let candidates = devices.filter { !$0.isSimulator }
-    let target = selector.flatMap { sel in
+    // Automatic selection must not land on a mains-powered device: measuring
+    // "drain" on an Apple TV is meaningless, and picking it silently — which is
+    // what an earlier version did when the phone was unplugged — produces a
+    // confident answer to the wrong question.
+    let batteryDevices = candidates.filter { $0.family.hasBattery }
+    // `??` takes an autoclosure, which cannot be async, so this is spelled out.
+    var target: DeviceSnapshot? = selector.flatMap { sel in
         candidates.first {
             $0.udid?.caseInsensitiveCompare(sel) == .orderedSame
                 || $0.displayName.lowercased().contains(sel.lowercased())
         }
-    } ?? candidates.first { $0.link == .usb } ?? candidates.first
+    }
+    if target == nil { target = await firstMeasurable(batteryDevices, session: session) }
+    if target == nil { target = batteryDevices.first }
 
     guard let device = target else {
-        print("No device found. Connect one over USB.")
+        print("No battery-powered device found. Connect an iPhone, iPad or iPod.")
+        return
+    }
+    if selector == nil && candidates.count > 1 {
+        print("Measuring \(device.displayName). Pass a name or UDID to choose another.\n")
+    }
+    guard device.family.hasBattery else {
+        print("\(device.displayName) is mains powered — there is no battery to measure.")
         return
     }
 
@@ -33,12 +65,12 @@ func runDrainCommand(
       1. Close the Auscult Agent if it is open (it holds the screen awake
          while a test is running).
       2. Lock the device so the screen turns off.
-      3. Leave the USB cable connected — the measurement needs it.
 
-    While the cable is attached the device is charging, so what gets measured
-    is system load: the power the device consumes, independent of the battery.
-    That is the figure that answers the drain question, and charging does not
-    distort it.
+    The cable is optional — the diagnostics relay works over Wi-Fi. Unplugged
+    is in fact the better measurement: charging inflates the figure by roughly
+    three times, because the charging circuit's own consumption lands in the
+    same register. With the cable out, what gets measured is the current
+    actually leaving the battery.
     """)
 
     if waitSeconds > 0 {

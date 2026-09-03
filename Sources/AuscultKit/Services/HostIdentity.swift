@@ -51,9 +51,21 @@ enum HostIdentity {
             throw IdentityError.keychain("could not create scratch keychain", status)
         }
 
-        // Let anything in this process use the imported key without prompting.
+        // Grant *this* process access to the imported key.
+        //
+        // Passing nil for the trusted-application list does not mean "trust
+        // everything" — it means the list is empty, so macOS prompts for the
+        // keychain password on every signing operation. That is invisible from
+        // a terminal (the CLI inherits a different trust context) but puts a
+        // password dialog in front of the user every time the app opens a TLS
+        // session. Naming the current application as trusted is what actually
+        // makes the key usable without prompting.
         var access: SecAccess?
-        SecAccessCreate("Auscult" as CFString, nil, &access)
+        var trustedSelf: SecTrustedApplication?
+        // A nil path means the currently running application.
+        SecTrustedApplicationCreateFromPath(nil, &trustedSelf)
+        let trusted = [trustedSelf].compactMap { $0 } as CFArray
+        SecAccessCreate("Auscult pairing identity" as CFString, trusted, &access)
 
         var params = SecItemImportExportKeyParameters()
         params.version = UInt32(SEC_KEY_IMPORT_EXPORT_PARAMS_VERSION)
