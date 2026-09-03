@@ -43,7 +43,7 @@ public struct DiagnosticSession: Sendable {
     /// unreachable now.
     @discardableResult
     public func prepareAgent(on device: DeviceSnapshot) async -> Bool {
-        guard !device.isSimulator, device.link == .usb else { return false }
+        guard !device.isSimulator else { return false }
         let launched = await agent.launchAgent(on: device)
         if launched {
             // Give the app a moment to come up and bind its port.

@@ -114,14 +114,31 @@ private actor ConnectionPool {
     }
 
     private var entries: [String: Entry] = [:]
-    /// Devices we've already failed to reach, so we don't retry a doomed
-    /// handshake once per probe.
-    private var failures: [String: Error] = [:]
+    /// Devices we've failed to reach, with when we gave up.
+    ///
+    /// Caching failures avoids retrying a doomed handshake once per probe. But
+    /// caching them *forever* is wrong: a phone that was briefly locked or off
+    /// Wi-Fi gets written off for the rest of the session, and every probe then
+    /// claims the capability needs a USB cable when it does not. Failures now
+    /// expire so a device that comes back is picked up.
+    private var failures: [String: (error: Error, at: Date)] = [:]
+    /// How long a failure is trusted before trying again.
+    private let failureTimeout: TimeInterval = 45
     private var batteryOK: [String: Bool] = [:]
     private var nandOK: [String: Bool] = [:]
 
     func relay(forUDID udid: String) async -> DiagnosticsRelay? {
         try? await establish(udid: udid).relay
+    }
+
+    /// A cached failure that has not yet expired.
+    private func liveFailure(for udid: String) -> Error? {
+        guard let record = failures[udid] else { return nil }
+        guard Date().timeIntervalSince(record.at) < failureTimeout else {
+            failures.removeValue(forKey: udid)
+            return nil
+        }
+        return record.error
     }
 
     func withRelay<T>(
@@ -154,7 +171,7 @@ private actor ConnectionPool {
 
     private func establish(udid: String) async throws -> Entry {
         if let existing = entries[udid] { return existing }
-        if let failure = failures[udid] { throw failure }
+        if let failure = liveFailure(for: udid) { throw failure }
 
         do {
             // One hop off the cooperative pool covers the whole chain: mux
@@ -178,7 +195,7 @@ private actor ConnectionPool {
             entries[udid] = entry
             return entry
         } catch {
-            failures[udid] = error
+            failures[udid] = (error, Date())
             throw error
         }
     }

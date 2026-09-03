@@ -38,7 +38,10 @@ public final class AgentTransport: DeviceTransport, @unchecked Sendable {
     // MARK: Capabilities
 
     public func capabilities(for device: DeviceSnapshot) async -> Set<Capability> {
-        guard !device.isSimulator, device.link == .usb, device.udid != nil else { return [] }
+        // Not gated to USB: the agent listens on the device's loopback
+        // interface and usbmux tunnels to it over whichever transport it has,
+        // so a network sighting reaches the agent just as a cable does.
+        guard !device.isSimulator, device.udid != nil else { return [] }
         guard let identity = await sessions.identity(for: device) else { return [] }
 
         var caps: Set<Capability> = [.agentLink]
@@ -148,9 +151,9 @@ private actor AgentSessionPool {
         let result = try await BlockingIO.run { () -> (AgentClient, AgentIdentity) in
             let mux = UsbmuxClient()
             let sightings = try mux.listDevices().filter { $0.serialNumber == udid }
-            // The agent listens on loopback, reachable only over the cable.
-            guard let device = sightings.first(where: \.isUSB) else {
-                throw TransportError.deviceUnreachable("\(udid) is not connected over USB")
+            // Prefer the cable for latency, but a network sighting works.
+            guard let device = sightings.first(where: \.isUSB) ?? sightings.first else {
+                throw TransportError.deviceUnreachable("\(udid) is not visible to usbmuxd")
             }
             let client = try AgentClient.connect(deviceID: device.deviceID)
             do {
