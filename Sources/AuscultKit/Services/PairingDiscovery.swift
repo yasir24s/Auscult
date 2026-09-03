@@ -35,6 +35,45 @@ public enum PairingDiscovery {
         "_apple-mobdev2._tcp",
     ]
 
+    /// USB devices that carry power but no data, and so cannot possibly be
+    /// diagnosed over the cable they are plugged into.
+    ///
+    /// The Apple Watch magnetic charger is the notable one: it enumerates on
+    /// USB as a device in its own right, so plugging it into a Mac looks for
+    /// all the world like connecting the Watch. It is an induction coil — there
+    /// is no data path to the Watch at all, and no amount of configuration will
+    /// create one.
+    public struct PowerOnlyAccessory: Sendable {
+        public var productName: String
+        public var explanation: String
+    }
+
+    static let powerOnlyProducts: [(match: String, explanation: String)] = [
+        ("Apple Watch Magnetic Charging Cable",
+         "an induction charger with no data lines — the Watch cannot be reached "
+         + "through it, however it is connected"),
+        ("MagSafe Charger",
+         "an induction charger; it carries power only"),
+    ]
+
+    /// Detect attached chargers that a user may reasonably mistake for a data link.
+    public static func powerOnlyAccessories() async -> [PowerOnlyAccessory] {
+        guard let result = try? await Shell.run(
+            "/usr/sbin/ioreg", ["-p", "IOUSB", "-w0", "-l"], timeout: 20
+        ) else { return [] }
+
+        var found: [PowerOnlyAccessory] = []
+        for line in result.out.split(separator: "\n") where line.contains("USB Product Name") {
+            for candidate in powerOnlyProducts where line.contains(candidate.match) {
+                guard !found.contains(where: { $0.productName == candidate.match }) else { continue }
+                found.append(PowerOnlyAccessory(
+                    productName: candidate.match, explanation: candidate.explanation
+                ))
+            }
+        }
+        return found
+    }
+
     /// Browse for advertisers. Shells out to `dns-sd`, which is always present
     /// on macOS and avoids taking a Network.framework dependency here for what
     /// is a one-shot diagnostic query.

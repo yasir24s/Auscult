@@ -17,6 +17,17 @@ func runPairCommand(session: DiagnosticSession) async {
     }
     if devices.filter({ !$0.isSimulator }).isEmpty { print("  (none)") }
 
+    // Called out before the network browse, because someone who has just
+    // plugged a charger in reasonably expects to see a device appear.
+    let powerOnly = await PairingDiscovery.powerOnlyAccessories()
+    if !powerOnly.isEmpty {
+        print("\nAttached over USB but carrying no data:\n")
+        for accessory in powerOnly {
+            print("  \(accessory.productName)")
+            print("      \(accessory.explanation)")
+        }
+    }
+
     print("\nBrowsing the local network for devices offering to pair…\n")
     let advertisers = await PairingDiscovery.browse(seconds: 6)
 
@@ -39,8 +50,12 @@ func runPairCommand(session: DiagnosticSession) async {
 
     APPLE WATCH
 
-    A Watch has no USB port and does not pair to a Mac directly — it is
-    discovered through the iPhone it belongs to. So the requirements are:
+    A Watch has no data port at all. Its magnetic charger is an induction
+    coil: the cable enumerates on USB, but nothing is behind it, so plugging
+    the Watch into a Mac can never produce a data connection.
+
+    A Watch is therefore reached only over the network, and discovered through
+    the iPhone it belongs to. The requirements are:
 
       1. The iPhone must be connected to this Mac and unlocked.
       2. The Watch must be unlocked and on the same Wi-Fi network.

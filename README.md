@@ -208,7 +208,23 @@ a projected runtime from pack energy divided by measured draw.
 
 ### Paired accessories come along for free
 
-An Apple Watch has no direct link to a Mac — it pairs to a phone and forwards
+An Apple Watch cannot be diagnosed over a cable, and the reason is worth
+stating because the hardware invites the opposite conclusion. Plug a Watch into
+a Mac and `ioreg` shows:
+
+```
+USB Vendor Name  = "Apple Inc."
+USB Product Name = "Apple Watch Magnetic Charging Cable"
+```
+
+The Mac sees *the cable* — which enumerates as a USB device in its own right —
+and nothing behind it. The charger is an induction coil with no data lines, so
+no configuration can turn it into a link. `auscult pair` detects attached
+power-only accessories and says so, rather than leaving someone to conclude
+their Watch is broken or unsupported.
+
+
+What works instead: a Watch pairs to a phone and forwards
 its crash and resource reports through it. Those land in the phone's crash-log
 directory under `ProxiedDevice-<id>/`, so a useful slice of Watch health is
 reachable without the Watch being paired to Xcode at all.
