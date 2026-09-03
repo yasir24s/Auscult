@@ -343,10 +343,26 @@ public struct AccessoryHealthProbe: Probe {
                                         .int(Int64(kills))))
             }
             if crashes > 0, counts.count > 1 {
+                // Grouped by process, with the report kinds nested underneath.
+                var kindsByProcess: [String: [String: Int]] = [:]
+                for entry in reports {
+                    kindsByProcess[entry.process, default: [:]][entry.kind.rawValue, default: 0] += 1
+                }
+                let groups: [MetricGroup] = counts
+                    .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+                    .prefix(8)
+                    .map { process, total in
+                        MetricGroup(
+                            owner: process,
+                            summary: "\(total) report\(total == 1 ? "" : "s")",
+                            entries: (kindsByProcess[process] ?? [:])
+                                .sorted { $0.value > $1.value }
+                                .map { "\($0.value) × \($0.key.lowercased())" }
+                        )
+                    }
                 metrics.append(.reading("acc.\(short).processes",
-                    "Accessory \(short) — processes reporting",
-                    .list(counts.sorted { $0.value > $1.value }.prefix(6)
-                        .map { "\($0.key) (\($0.value))" })))
+                    "Accessory \(short) — processes reporting", .grouped(groups),
+                    note: "expand a process to see what kinds of report it produced"))
             }
         }
 

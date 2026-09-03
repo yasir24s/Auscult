@@ -72,6 +72,16 @@ public struct Metric: Codable, Sendable, Identifiable, Hashable {
         self.verdict = verdict; self.note = note; self.expectation = expectation
     }
 
+    public var isGrouped: Bool {
+        if case .grouped = value { return true }
+        return false
+    }
+
+    public var groupCount: Int {
+        if case .grouped(let groups) = value { return groups.count }
+        return 0
+    }
+
     public var formattedValue: String {
         let base = value.description
         guard let unit else { return base }
@@ -87,6 +97,13 @@ public enum MetricValue: Codable, Sendable, Hashable, CustomStringConvertible {
     case bool(Bool)
     case bytes(Int64)
     case list([String])
+    /// Entries grouped under an owner, for drill-down display.
+    ///
+    /// A flat list of "runningboardd — osservice<SpringBoard>36-37 — 3h 45m,
+    /// audiomxd — com.apple.audio.VAD [vdef] — 1h 9m, …" is technically
+    /// complete and practically unreadable. Grouping by the process that owns
+    /// each entry lets a reader see *who* first and drill into *what*.
+    case grouped([MetricGroup])
     case absent
 
     public var description: String {
@@ -97,6 +114,9 @@ public enum MetricValue: Codable, Sendable, Hashable, CustomStringConvertible {
         case .bool(let b): b ? "yes" : "no"
         case .bytes(let b): ByteCountFormatter.string(fromByteCount: b, countStyle: .file)
         case .list(let l): l.isEmpty ? "none" : l.joined(separator: ", ")
+        case .grouped(let g):
+            g.isEmpty ? "none"
+                : g.map { "\($0.owner) (\($0.entries.count))" }.joined(separator: ", ")
         case .absent: "—"
         }
     }
@@ -125,6 +145,7 @@ public enum MetricValue: Codable, Sendable, Hashable, CustomStringConvertible {
         case .bool(let v): try c.encode("bool", forKey: .type); try c.encode(v, forKey: .value)
         case .bytes(let v): try c.encode("bytes", forKey: .type); try c.encode(v, forKey: .value)
         case .list(let v): try c.encode("list", forKey: .type); try c.encode(v, forKey: .value)
+        case .grouped(let v): try c.encode("grouped", forKey: .type); try c.encode(v, forKey: .value)
         case .absent: try c.encode("absent", forKey: .type)
         }
     }
@@ -138,8 +159,24 @@ public enum MetricValue: Codable, Sendable, Hashable, CustomStringConvertible {
         case "bool": self = .bool(try c.decode(Bool.self, forKey: .value))
         case "bytes": self = .bytes(try c.decode(Int64.self, forKey: .value))
         case "list": self = .list(try c.decode([String].self, forKey: .value))
+        case "grouped": self = .grouped(try c.decode([MetricGroup].self, forKey: .value))
         default: self = .absent
         }
+    }
+}
+
+/// One owner and the entries belonging to it.
+public struct MetricGroup: Codable, Sendable, Hashable, Identifiable {
+    public var id: String { owner }
+    /// The process or app the entries belong to.
+    public var owner: String
+    /// Shown on the owner's own row — a total, a count, a headline.
+    public var summary: String
+    /// The detail, revealed when the owner is expanded.
+    public var entries: [String]
+
+    public init(owner: String, summary: String, entries: [String]) {
+        self.owner = owner; self.summary = summary; self.entries = entries
     }
 }
 

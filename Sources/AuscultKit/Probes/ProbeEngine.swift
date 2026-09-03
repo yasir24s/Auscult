@@ -119,9 +119,9 @@ public struct ProbeEngine: Sendable {
         }
         if !probe.anyCapabilities.isEmpty && probe.anyCapabilities.isDisjoint(with: available) {
             let names = probe.anyCapabilities.map(\.rawValue).sorted().joined(separator: " or ")
-            return make(.unsupported, device.isReachable
-                ? "needs one of: \(names) — none available on this host"
-                : "device is not connected — connect over USB and retry (needs \(names))")
+            return make(.unsupported,
+                "needs one of: \(names) — none resolved for this device"
+                + (device.link == .usb ? "" : "; a USB connection may add them"))
         }
         let missing = probe.requiredCapabilities.subtracting(available)
         if !missing.isEmpty {

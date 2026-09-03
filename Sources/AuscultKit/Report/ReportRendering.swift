@@ -47,6 +47,19 @@ public extension DiagnosticReport {
                     var line = "      \(paint(mark, m.verdict)) \(m.label): \(m.formattedValue)"
                     if let n = m.note { line += "  (\(n))" }
                     out += line + "\n"
+                    // State the threshold a graded value was judged against.
+                    if let expectation = m.expectation, m.verdict != .info {
+                        out += "          expected: \(expectation)\n"
+                    }
+                    // Grouped values print as a small tree rather than a blob.
+                    if case .grouped(let groups) = m.value {
+                        for group in groups {
+                            out += "          \(group.owner) — \(group.summary)\n"
+                            for entry in group.entries {
+                                out += "              \(entry)\n"
+                            }
+                        }
+                    }
                 }
                 out += "\n"
             }

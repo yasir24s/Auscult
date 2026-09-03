@@ -101,7 +101,17 @@ public struct MemoryPressureProbe: Probe {
         if samples.count >= 2, let first = samples.first, let last = samples.last {
             let seconds = last.date.timeIntervalSince(first.date)
             let delta = last.compressions - first.compressions
-            if seconds > 60, delta > 0 {
+            // A reboot resets these counters, so the newest report can hold a
+            // *smaller* number than the oldest. Reported -672 compressions per
+            // second before this check, which is not a thing.
+            if delta < 0 {
+                metrics.append(Metric(
+                    id: "compressionRate", label: "Page compression rate",
+                    value: .absent, verdict: .unsupported,
+                    note: "the counters reset between these reports, which means the "
+                        + "device rebooted — a rate cannot be derived across a restart"
+                ))
+            } else if seconds > 60, delta > 0 {
                 let perSecond = delta / seconds
                 metrics.append(.graded(
                     "compressionRate", "Page compression rate", perSecond, unit: "/s",
@@ -162,7 +172,8 @@ public struct MemoryPressureProbe: Probe {
         let verdict = rollup(metrics)
         let summary: String
         if let first = samples.first, let last = samples.last, samples.count >= 2,
-           last.date.timeIntervalSince(first.date) > 60 {
+           last.date.timeIntervalSince(first.date) > 60,
+           last.compressions >= first.compressions {
             let seconds = last.date.timeIntervalSince(first.date)
             let perSecond = (last.compressions - first.compressions) / seconds
             let lowestFreeMB = (samples.map(\.freeBytes).min() ?? 0) / 1_048_576

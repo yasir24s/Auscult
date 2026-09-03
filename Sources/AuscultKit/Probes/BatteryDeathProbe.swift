@@ -117,22 +117,36 @@ public struct BatteryDeathProbe: Probe {
 
         // Aggregate the sleep-preventing assertions, excluding the display —
         // which is reported separately above because it dwarfs the rest.
-        var assertionTotals: [String: Double] = [:]
+        // Grouped by the process holding the assertion, so a reader sees which
+        // subsystem is responsible before wading into individual assertion
+        // names — those names are long, opaque, and several per holder.
+        var byHolder: [String: [(name: String, seconds: Double)]] = [:]
         for (_, report) in reports {
             for assertion in report.assertions where !assertion.isBacklight {
-                let key = "\(assertion.holder) — \(assertion.name)"
-                assertionTotals[key] = (assertionTotals[key] ?? 0) + assertion.heldSeconds
+                byHolder[assertion.holder, default: []]
+                    .append((assertion.name, assertion.heldSeconds))
             }
         }
-        let topAssertions = assertionTotals
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .prefix(8)
-        if !topAssertions.isEmpty {
+        if !byHolder.isEmpty {
+            let groups: [MetricGroup] = byHolder
+                .map { holder, assertions in
+                    let total = assertions.reduce(0) { $0 + $1.seconds }
+                    return (holder, total, assertions)
+                }
+                .sorted { $0.1 > $1.1 }
+                .map { holder, total, assertions in
+                    MetricGroup(
+                        owner: Self.friendlyHolder(holder),
+                        summary: "held \(Self.clock(total)) across "
+                               + "\(assertions.count) assertion\(assertions.count == 1 ? "" : "s")",
+                        entries: assertions
+                            .sorted { $0.seconds > $1.seconds }
+                            .map { "\(Self.clock($0.seconds))  \(Self.friendlyAssertion($0.name))" }
+                    )
+                }
             metrics.append(.reading("assertions", "Subsystems preventing sleep",
-                .list(topAssertions.map { key, seconds in
-                    "\(key.prefix(58)) — \(Self.clock(seconds))"
-                }),
-                note: "each of these kept the device from sleeping for the time shown"))
+                .grouped(groups),
+                note: "expand a subsystem to see the individual assertions it held"))
         }
 
         // Per-event detail, so the pattern is visible rather than averaged away.
@@ -166,6 +180,40 @@ public struct BatteryDeathProbe: Probe {
             summary += ", longest screen-on \(Self.clock(longest))"
         }
         return result(verdict, summary, metrics: metrics)
+    }
+
+    /// Turn a daemon name into something a person can act on.
+    static func friendlyHolder(_ holder: String) -> String {
+        let known = [
+            "runningboardd": "runningboardd (app & system lifecycle)",
+            "audiomxd": "audiomxd (audio playback)",
+            "bluetoothd": "bluetoothd (Bluetooth)",
+            "nearbyd": "nearbyd (nearby device / Find My)",
+            "terminusd": "terminusd (Find My accessories)",
+            "locationd": "locationd (location services)",
+            "SpringBoard": "SpringBoard (home screen & display)",
+            "mediaplaybackd": "mediaplaybackd (media playback)",
+        ]
+        return known[holder] ?? holder
+    }
+
+    /// Assertion names embed bundle IDs and session numbers. Pull out the app
+    /// where there is one, since that is the actionable part.
+    static func friendlyAssertion(_ name: String) -> String {
+        // e.g. "app<com.ifun.royal.lavaslots.ios(FEEDEEEE-…)" -> the bundle ID
+        if let open = name.firstIndex(of: "<"),
+           let close = name[open...].firstIndex(where: { $0 == "(" || $0 == ">" }) {
+            let inner = String(name[name.index(after: open)..<close])
+            if inner.contains(".") {
+                let prefix = name[name.startIndex..<open]
+                return "\(prefix): \(inner)"
+            }
+        }
+        // Trim the trailing session/context noise.
+        if let dot = name.range(of: ".context", options: .backwards) {
+            return String(name[name.startIndex..<dot.lowerBound])
+        }
+        return name
     }
 
     private static func clock(_ seconds: Double) -> String {
