@@ -16,6 +16,7 @@ func usage() -> String {
 
     USAGE
       auscult doctor                    Show which data paths this host has
+      auscult quit <app>…               Force-quit named apps, and report if iOS revives them
       auscult memory [udid]             Full resident-memory census (--limit N)
       auscult energy [udid]             Rank apps by iOS resource-limit reports
       auscult energy --detail <name>    Everything known about one process
@@ -203,6 +204,9 @@ case "parse-listing":
         exit(2)
     }
     runParseListingCommand(path: path)
+
+case "quit":
+    await runQuitCommand(session: session, names: positionals)
 
 case "memory":
     await runMemoryCommand(
