@@ -60,7 +60,7 @@ func option(_ name: String) -> String? {
 /// Positional arguments only — anything not a flag or a flag's value.
 var positionals: [String] = []
 do {
-    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test", "--seconds", "--wait", "--limit", "--detail"]
+    let valueFlags: Set<String> = ["--out", "--udid", "--name", "--class", "--test", "--seconds", "--wait", "--limit", "--detail", "--device"]
     var skipNext = false
     for a in args.dropFirst() {
         if skipNext { skipNext = false; continue }
@@ -206,7 +206,11 @@ case "parse-listing":
     runParseListingCommand(path: path)
 
 case "quit":
-    await runQuitCommand(session: session, names: positionals)
+    await runQuitCommand(
+        session: session,
+        names: positionals.filter { $0 != option("--device") },
+        deviceSelector: option("--device")
+    )
 
 case "memory":
     await runMemoryCommand(

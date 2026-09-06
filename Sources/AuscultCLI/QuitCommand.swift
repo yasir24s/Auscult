@@ -1,6 +1,42 @@
 import Foundation
 import AuscultKit
 
+/// Helpers shared by the selection pass and the termination pass.
+enum QuitSupport {
+    struct Target { let name: String; let pid: Int }
+
+    static func processList(from listing: DynamicValue) -> [DynamicValue] {
+        var processes = listing.runningProcesses.array
+        if processes.isEmpty { processes = listing.search(forKey: "runningProcesses").array }
+        return processes
+    }
+
+    /// App-bundle processes whose name matches any of `names`.
+    static func matches(_ names: [String], in processes: [DynamicValue]) -> [Target] {
+        var targets: [Target] = []
+        for entry in processes {
+            guard let path = entry.firstPresent("executable", "path", "name").string,
+                  // App bundles only. Terminating a system daemon by hand
+                  // either achieves nothing or breaks something.
+                  path.contains("/containers/Bundle/"),
+                  let pid = entry.firstPresent("processIdentifier", "pid").int
+            else { continue }
+
+            let raw = (path as NSString).lastPathComponent
+            let name = raw.removingPercentEncoding ?? raw
+            // Never terminate our own agent: it is the link the tests run over.
+            guard !name.lowercased().contains("auscult") else { continue }
+
+            if names.contains(where: { name.localizedCaseInsensitiveContains($0) }) {
+                targets.append(Target(name: name, pid: Int(pid)))
+            }
+        }
+        return targets
+    }
+}
+
+private typealias Self_ = QuitSupport
+
 /// `auscult quit <name>…` — terminate named third-party apps on the device.
 ///
 /// Exists because force-quitting turned out to be a precision instrument, not a
@@ -11,49 +47,68 @@ import AuscultKit
 ///
 /// Restricted to app bundles: a system daemon terminated by hand is either
 /// restarted immediately or breaks something, and neither helps.
-func runQuitCommand(session: DiagnosticSession, names: [String], xcrun: String = "/usr/bin/xcrun") async {
+func runQuitCommand(
+    session: DiagnosticSession, names: [String],
+    deviceSelector: String? = nil, xcrun: String = "/usr/bin/xcrun"
+) async {
     guard !names.isEmpty else {
         print("usage: auscult quit <app name>…    e.g. auscult quit Twitter TikTok")
         return
     }
 
     let (devices, _) = await session.devices()
-    guard let device = devices.first(where: { !$0.isSimulator && $0.family.hasBattery })
-            ?? devices.first(where: { !$0.isSimulator }),
-          let selector = device.devicectlSelector
-    else {
-        print("No device found.")
+
+    // Find the device the named apps are actually running on.
+    //
+    // Ranking by device class is not enough here: with a phone and a tablet
+    // both idle on Wi-Fi the tiebreak is arbitrary, and "quit Twitter" picked
+    // whichever sorted first rather than the one running Twitter. The command
+    // names a process, so the process decides.
+    var chosen: (device: DeviceSnapshot, processes: [DynamicValue])?
+    var checked: [String] = []
+
+    if let deviceSelector {
+        guard let device = await DeviceSelection.choose(
+            from: devices, selector: deviceSelector, session: session
+        ) else {
+            print("No device matched '\(deviceSelector)'.")
+            return
+        }
+        let listing = await session.router.tryFetch(.processes, for: device)
+        chosen = (device, QuitSupport.processList(from: listing))
+    } else {
+        for candidate in devices.filter({ !$0.isSimulator })
+            .sorted(by: { ($0.family.hasBattery ? 0 : 1) < ($1.family.hasBattery ? 0 : 1) }) {
+            guard await session.router.has(.processList, for: candidate) else { continue }
+            let listing = await session.router.tryFetch(.processes, for: candidate)
+            let processes = QuitSupport.processList(from: listing)
+            if QuitSupport.matches(names, in: processes).isEmpty == false {
+                chosen = (candidate, processes)
+                break
+            }
+            checked.append(candidate.displayName)
+            // Remember the first readable device, in case nothing matches.
+            if chosen == nil { chosen = (candidate, processes) }
+        }
+
+        // Nothing matched anywhere: say that, rather than naming one device
+        // arbitrarily and implying the others were not looked at.
+        if let chosen, QuitSupport.matches(names, in: chosen.processes).isEmpty {
+            print("""
+            \(names.joined(separator: ", ")) not running on any reachable device.
+            Checked: \(checked.joined(separator: ", ")).
+            """)
+            return
+        }
+    }
+
+    guard let (device, processes) = chosen, let selector = device.devicectlSelector else {
+        print("No device with a readable process list. Unlock it and check it is reachable.")
         return
     }
     print("Device: \(device.displayName)\n")
 
-    guard let listing = try? await session.router.fetch(.processes, for: device) else {
-        print("Could not read the process list. Is the device reachable?")
-        return
-    }
-    var processes = listing.runningProcesses.array
-    if processes.isEmpty { processes = listing.search(forKey: "runningProcesses").array }
-
-    struct Target { let name: String; let pid: Int }
-    var targets: [Target] = []
-
-    for entry in processes {
-        guard let path = entry.firstPresent("executable", "path", "name").string,
-              // App bundles only. Terminating a system daemon by hand either
-              // achieves nothing or breaks something.
-              path.contains("/containers/Bundle/"),
-              let pid = entry.firstPresent("processIdentifier", "pid").int
-        else { continue }
-
-        let raw = (path as NSString).lastPathComponent
-        let name = raw.removingPercentEncoding ?? raw
-        // Never terminate our own agent: it is the link the tests run over.
-        guard !name.lowercased().contains("auscult") else { continue }
-
-        if names.contains(where: { name.localizedCaseInsensitiveContains($0) }) {
-            targets.append(Target(name: name, pid: Int(pid)))
-        }
-    }
+    let targets = QuitSupport.matches(names, in: processes)
 
     guard !targets.isEmpty else {
         print("None of \(names.joined(separator: ", ")) are running.")
