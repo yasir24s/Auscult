@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager / Xcode build output
+.build/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.pcm
+*.sdkstatcache
+ModuleCache/
+
+# Signed app bundles and provisioning material
+*.app/
+*.mobileprovision
+*.ipa
+*.dSYM/
+
+# Generated Xcode project (xcodegen rebuilds it)
+Agent/AuscultAgent.xcodeproj/
