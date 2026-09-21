@@ -187,6 +187,29 @@ Measured on an iPhone 17 Pro Max, iOS 27.0 seed:
 | Bluetooth | **54 advertisers heard**, strongest −29 dBm |
 | GNSS | time-to-first-fix and accuracy (coordinates withheld) |
 
+### Standalone mode
+
+The agent runs its whole catalogue with no Mac attached. That is the default
+tab; the host link is the secondary one.
+
+This matters beyond convenience. The agent shipped to TestFlight initially could
+not run a single check on its own — it opened on a "waiting for the Mac" screen,
+which makes it untestable by anyone who is not sitting at this particular Mac
+with a cable. A beta build nobody can exercise is not a beta build.
+
+The tests never needed a host. `AgentTest.run(context:)` takes three closures
+and nothing else. What needed a host was the code that *drove* them, which lived
+inside `AgentServer` next to the socket. `DiagnosticRunner` now owns that —
+the detached-task hop that keeps the compute tests off the main actor and away
+from the watchdog, the idle-timer window, the prompt continuations, the result
+store — and the host path goes through it too, via `on…` hooks that are nil when
+running standalone. One implementation, not two that drift.
+
+`Run All` covers everything that works unattended. Interactive tests are
+excluded from it on purpose: each blocks on a person and gives up after 45s, so
+sweeping them would produce minutes of timeouts reported as failures. They stay
+individually runnable and are marked "needs you".
+
 ## Investigating battery drain
 
 `auscult drain` is the purpose-built workflow, because the ordinary probe reports

@@ -44,7 +44,7 @@ struct DeadPixelSweepTest: AgentTest {
             try? await Task.sleep(nanoseconds: 700_000_000)
 
             context.awaitingUser("Look at the device: is it \(colour.expectation)?")
-            let answer = await context.askUser(AgentServer.UserPrompt(
+            let answer = await context.askUser(UserPrompt(
                 message: "Is the screen \(colour.expectation)?",
                 confirmTitle: "Looks correct",
                 rejectTitle: "I see a defect"

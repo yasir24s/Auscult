@@ -107,7 +107,7 @@ struct CameraTest: AgentTest {
             let joined: String = names.joined(separator: ", ")
             let message: String = "\(names.count) \(plural) saw only darkness (\(joined)).\n\n"
                 + "Hold the device up, away from any surface, with the room lit — then tap Ready."
-            let answer = await context.askUser(AgentServer.UserPrompt(
+            let answer = await context.askUser(UserPrompt(
                 message: message,
                 confirmTitle: "Ready",
                 rejectTitle: "Skip"

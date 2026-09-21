@@ -7,7 +7,7 @@ struct AgentTestContext {
     let progress: (Double, String) -> Void
     /// Put a question on the device's screen and wait for the answer.
     /// Distinguishes a rejection from nobody answering at all.
-    let askUser: (AgentServer.UserPrompt) async -> AgentServer.PromptAnswer
+    let askUser: (UserPrompt) async -> PromptAnswer
     /// Tell the host we are blocked waiting on the person holding the device,
     /// for interactions richer than a yes/no.
     let awaitingUser: (String) -> Void

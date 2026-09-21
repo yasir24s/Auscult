@@ -12,26 +12,27 @@ import UIKit
 /// Only one host connection is served at a time. A diagnostic run has exclusive
 /// use of the hardware — two concurrent clients would fight over the camera and
 /// the audio session and produce nonsense.
+///
+/// Running tests is `DiagnosticRunner`'s job, not this class's. This one only
+/// moves frames and forwards what the runner reports, which is why the app
+/// works with no Mac attached at all.
 @MainActor
 @Observable
 final class AgentServer {
+    /// State of the *link*. What a test is doing lives on the runner — keeping
+    /// the two apart is what allows a standalone run to show progress without
+    /// pretending a host is connected.
     enum State: Equatable {
         case idle
         case listening
         case connected(host: String)
-        case running(test: String, fraction: Double, message: String)
         case failed(String)
 
-        var isConnected: Bool {
-            switch self { case .connected, .running: true; default: false }
-        }
+        var isConnected: Bool { if case .connected = self { true } else { false } }
     }
 
     private(set) var state: State = .idle
     private(set) var log: [LogEntry] = []
-    private(set) var lastResults: [AgentTestResult] = []
-    /// Set when a test needs the person holding the device to do something.
-    private(set) var userPrompt: UserPrompt?
 
     struct LogEntry: Identifiable {
         let id = UUID()
@@ -40,34 +41,38 @@ final class AgentServer {
         let isError: Bool
     }
 
-    struct UserPrompt: Equatable {
-        var message: String
-        var confirmTitle: String
-        var rejectTitle: String?
-    }
+    let runner: DiagnosticRunner
 
     private var listener: NWListener?
     private var connection: NWConnection?
     private var inbound = Data()
-    private var runTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     /// When the last frame was sent, so the heartbeat only fires during silence.
     private var lastSendAt = Date.distantPast
     private let queue = DispatchQueue(label: "com.yasir.auscult.agent.net")
-    private let registry = TestRegistry()
 
-    /// How the person answered — or that they never did.
-    ///
-    /// A distinct `timedOut` case matters: treating "nobody was holding the
-    /// device" as "the user saw a defect" would report a broken display on
-    /// perfectly good hardware, which is the worst kind of wrong answer a
-    /// diagnostic can give.
-    enum PromptAnswer {
-        case confirmed, rejected, timedOut
+    init(runner: DiagnosticRunner) {
+        self.runner = runner
+
+        // Forward everything the runner reports to the host. Nil hooks are the
+        // standalone case; the runner does not care either way.
+        runner.onStarted = { [weak self] descriptor in
+            self?.startHeartbeat(testID: descriptor.id)
+        }
+        runner.onProgress = { [weak self] progress in
+            self?.send(.progress(progress))
+        }
+        runner.onFinished = { [weak self] result in
+            self?.stopHeartbeat()
+            self?.send(.result(result))
+        }
+        runner.onCancelled = { [weak self] in
+            self?.stopHeartbeat()
+        }
+        runner.onNote = { [weak self] text, isError in
+            self?.note(text, error: isError)
+        }
     }
-
-    /// Continuation the interactive tests wait on for the user's answer.
-    private var promptContinuation: CheckedContinuation<PromptAnswer, Never>?
 
     // MARK: Lifecycle
 
@@ -104,11 +109,6 @@ final class AgentServer {
             }
             self.listener = listener
             listener.start(queue: queue)
-
-            // Deliberately NOT disabling the idle timer here. Holding the
-            // screen awake for the whole session costs a couple of watts on a
-            // large OLED, which would corrupt the very drain measurements this
-            // tool exists to take. It is enabled only while a test is running.
         } catch {
             state = .failed(error.localizedDescription)
             note("Could not listen: \(error.localizedDescription)", error: true)
@@ -116,7 +116,7 @@ final class AgentServer {
     }
 
     func stop() {
-        runTask?.cancel()
+        runner.cancel()
         connection?.cancel()
         listener?.cancel()
         connection = nil
@@ -154,11 +154,8 @@ final class AgentServer {
     }
 
     private func hostWentAway() {
-        runTask?.cancel()
+        runner.cancel()
         connection = nil
-        userPrompt = nil
-        promptContinuation?.resume(returning: .timedOut)
-        promptContinuation = nil
         if listener != nil { state = .listening }
     }
 
@@ -216,13 +213,17 @@ final class AgentServer {
             send(.hello(identity()))
 
         case .listTests:
-            send(.tests(registry.catalogue()))
+            send(.tests(runner.catalogue))
 
-        case .runTest(let id, let parameters):
-            run(testID: id, parameters: parameters)
+        case .runTest(let id, _):
+            guard runner.descriptor(for: id) != nil else {
+                send(.failure(AgentFailure(testID: id, message: "No such test: \(id)")))
+                return
+            }
+            runner.run(testID: id)
 
         case .cancelTest:
-            runTask?.cancel()
+            runner.cancel()
             note("Run cancelled by host")
 
         case .goodbye:
@@ -241,123 +242,8 @@ final class AgentServer {
             osVersion: UIDevice.current.systemVersion,
             osBuild: DeviceFacts.osBuild,
             isSimulator: DeviceFacts.isSimulator,
-            tests: registry.catalogue()
+            tests: runner.catalogue
         )
-    }
-
-    private func run(testID: String, parameters: [String: String]) {
-        guard let test = registry.test(withID: testID) else {
-            send(.failure(AgentFailure(testID: testID, message: "No such test: \(testID)")))
-            return
-        }
-        runTask?.cancel()
-
-        // Detached, NOT @MainActor. The compute and thermal tests saturate every
-        // core for seconds at a time; running that on the main actor blocks the
-        // run loop and iOS's watchdog kills the app outright — which the host
-        // sees as the connection dropping mid-test. UI and socket work hops back
-        // to the main actor explicitly.
-        let descriptor = test.descriptor
-        runTask = Task.detached(priority: .userInitiated) { [weak self] in
-            let started = Date()
-            await MainActor.run { [weak self] in
-                self?.state = .running(test: descriptor.title, fraction: 0, message: "Starting")
-                self?.note("Running \(descriptor.title)")
-                // Keep the screen alive for the duration of this test only.
-                UIApplication.shared.isIdleTimerDisabled = true
-                self?.startHeartbeat(testID: testID)
-            }
-
-            var result: AgentTestResult
-            do {
-                result = try await test.run(context: AgentTestContext(
-                    progress: { fraction, message in
-                        Task { @MainActor [weak self] in
-                            guard let self else { return }
-                            self.state = .running(
-                                test: descriptor.title, fraction: fraction, message: message
-                            )
-                            self.send(.progress(AgentProgress(
-                                testID: testID, fraction: fraction, message: message
-                            )))
-                        }
-                    },
-                    askUser: { prompt in
-                        await self?.askUser(prompt, testID: testID) ?? .timedOut
-                    },
-                    awaitingUser: { message in
-                        Task { @MainActor [weak self] in
-                            self?.send(.progress(AgentProgress(
-                                testID: testID, fraction: 0.5,
-                                message: message, awaitingUser: true
-                            )))
-                        }
-                    }
-                ))
-            } catch is CancellationError {
-                await MainActor.run { [weak self] in
-                    self?.stopHeartbeat()
-                    UIApplication.shared.isIdleTimerDisabled = false
-                    self?.state = .connected(host: "Mac")
-                }
-                return
-            } catch {
-                result = AgentTestResult(
-                    testID: testID, title: descriptor.title,
-                    section: descriptor.section, verdict: .error,
-                    summary: "Test failed unexpectedly",
-                    detail: error.localizedDescription
-                )
-            }
-            result.duration = Date().timeIntervalSince(started)
-
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.stopHeartbeat()
-                UIApplication.shared.isIdleTimerDisabled = false
-                self.lastResults.removeAll { $0.testID == result.testID }
-                self.lastResults.append(result)
-                self.userPrompt = nil
-                self.state = .connected(host: "Mac")
-                self.send(.result(result))
-            }
-        }
-    }
-
-    // MARK: Interactive prompts
-
-    func askUser(
-        _ prompt: UserPrompt, testID: String, timeout: TimeInterval = 45
-    ) async -> PromptAnswer {
-        send(.progress(AgentProgress(
-            testID: testID, fraction: 0.5,
-            message: prompt.message, awaitingUser: true
-        )))
-        userPrompt = prompt
-
-        let answer = await withCheckedContinuation { (c: CheckedContinuation<PromptAnswer, Never>) in
-            promptContinuation = c
-            // Give up on our own schedule rather than blocking the host forever
-            // on someone who has put the phone down.
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                self.resolvePrompt(.timedOut)
-            }
-        }
-        userPrompt = nil
-        return answer
-    }
-
-    /// Called from the UI when the person answers an on-device prompt.
-    func answerPrompt(_ confirmed: Bool) {
-        resolvePrompt(confirmed ? .confirmed : .rejected)
-    }
-
-    private func resolvePrompt(_ answer: PromptAnswer) {
-        guard let continuation = promptContinuation else { return }
-        promptContinuation = nil
-        userPrompt = nil
-        continuation.resume(returning: answer)
     }
 
     // MARK: Sending
@@ -412,5 +298,5 @@ final class AgentServer {
 }
 
 enum AgentInfo {
-    static let version = "0.1.0"
+    static let version = "0.2.0"
 }
