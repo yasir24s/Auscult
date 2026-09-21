@@ -462,6 +462,16 @@ Note that the archive signs with Apple Development and the wildcard profile;
 the distribution identity and the Store profile are applied at *export*.
 Inspecting the archive instead of the `.ipa` will tell you the wrong thing.
 
+Upload with `UPLOAD=1 Scripts/archive-agent.sh`. This needs **no App Store
+Connect API key and no app-specific password**: `destination: upload` in the
+export options rides the account already signed into Xcode. That is easy to
+miss, because every `altool` invocation refuses to run without one or the
+other, which makes CLI upload look credential-gated when it is not.
+
+"Upload succeeded" is not the final word either. App Store Connect runs its
+beta-SDK check during *processing*, after the transfer finishes, and rejects a
+seed-built binary by email at that point rather than at upload time.
+
 **The macOS app cannot ship through TestFlight, and this is architectural
 rather than a signing problem.** macOS TestFlight is reachable only through
 the Mac App Store channel, which mandates `com.apple.security.app-sandbox`.

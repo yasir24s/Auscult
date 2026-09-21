@@ -56,19 +56,32 @@ echo
 echo "Exported $IPA"
 codesign -dvvv "$ARCHIVE/Products/Applications/Auscult Agent.app" 2>&1 | grep -E "^Authority=Apple" | head -1
 
-cat <<NOTE
+if [ "${UPLOAD:-0}" = "1" ]; then
+    # destination=upload rides the account already signed into Xcode -- the
+    # same session that mints the distribution cert and Store profile during
+    # export. No App Store Connect API key and no app-specific password are
+    # needed, which is not obvious: every altool invocation demands one or the
+    # other, so it looks like CLI upload requires credentials. It does not.
+    sed 's|<string>export</string>|<string>upload</string>|' \
+        "$OUT/exportOptions.plist" > "$OUT/uploadOptions.plist"
+    xcodebuild -exportArchive -archivePath "$ARCHIVE" \
+        -exportOptionsPlist "$OUT/uploadOptions.plist" \
+        -exportPath "$OUT/upload" -allowProvisioningUpdates
+    cat <<'NOTE'
 
-Upload needs App Store Connect credentials, which this script deliberately
-does not hold. Either:
-
-  Xcode > Window > Organizer > Archives > Distribute App      (uses the
-  account already signed into Xcode -- no extra credentials to create)
-
-or, with an App Store Connect API key (.p8) in ~/.appstoreconnect/private_keys:
-
-  xcrun altool --upload-app -f "$IPA" -t ios \\
-      --apiKey <KEY_ID> --apiIssuer <ISSUER_ID>
-
-An App Store Connect *app record* for com.yasir.auscult.agent must exist
-before either will succeed; registering the bundle ID is not the same thing.
+Uploaded. "Upload succeeded" is not the final word: App Store Connect runs its
+beta-SDK check during *processing*, after the transfer completes, and a build
+made with a seed Xcode is rejected by email at that point. The guard at the top
+of this script is what prevents that.
 NOTE
+else
+    cat <<NOTE
+
+Not uploaded. Re-run with UPLOAD=1 to send it:
+
+    UPLOAD=1 $0
+
+An App Store Connect app record for com.yasir.auscult.agent must exist first;
+registering the bundle ID is not the same thing.
+NOTE
+fi
