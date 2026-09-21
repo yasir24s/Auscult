@@ -88,6 +88,9 @@ struct AudioLoopbackTest: AgentTest {
         // is by far the most common reason a loopback test "fails", so check it
         // before blaming the hardware.
         let outputVolume = Double(session.outputVolume)
+        // Index kept so the grade can be withdrawn below if the tone is heard
+        // anyway. Appended here rather than later so it still reads in order.
+        let volumeMetricIndex = metrics.count
         metrics.append(.graded(
             "outputVolume", "Media volume", outputVolume * 100, unit: "%",
             warnAt: 45, failAt: 10, higherIsBetter: true,
@@ -207,6 +210,18 @@ struct AudioLoopbackTest: AgentTest {
                                  note: micWorks
                                     ? "the microphone is recording, so the speaker is the suspect"
                                     : "the microphone recorded near-silence, so it is the suspect"))
+        }
+
+        // Media volume explains a *failure*; it is not a result in itself. If
+        // the tone came back cleanly then the volume was self-evidently loud
+        // enough, and leaving it graded makes the test warn about hardware it
+        // has just proved works — which is exactly the kind of wrong answer a
+        // diagnostic must not give.
+        if ratioDB >= 12, metrics.indices.contains(volumeMetricIndex),
+           metrics[volumeMetricIndex].id == "outputVolume" {
+            metrics[volumeMetricIndex].verdict = .info
+            metrics[volumeMetricIndex].note =
+                "low, but the tone was recovered anyway, so it was loud enough"
         }
 
         let verdict = rollup(metrics)

@@ -100,6 +100,10 @@ struct DiagnosticsView: View {
                     TallyPip(count: t.pass, verdict: .pass)
                     TallyPip(count: t.warn, verdict: .warn)
                     TallyPip(count: t.fail, verdict: .fail)
+                    // Without this the pips silently omit ungraded results and
+                    // read as though they should sum to the run count but do
+                    // not — 13 + 2 + 0 next to "16 run".
+                    TallyPip(count: t.other, verdict: .info)
                     Spacer()
                     Text("\(runner.results.count) run")
                         .font(.caption.monospacedDigit())

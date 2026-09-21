@@ -298,5 +298,5 @@ final class AgentServer {
 }
 
 enum AgentInfo {
-    static let version = "0.2.0"
+    static let version = "0.2.1"
 }
