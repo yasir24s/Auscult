@@ -14,6 +14,11 @@
     <key>UILaunchScreen</key>                  <dict/>
     <key>UIApplicationSupportsIndirectInputEvents</key> <true/>
 
+    <!-- The agent speaks plain TCP over the usbmux tunnel (NWParameters.tcp,
+         no TLS), so it uses no encryption at all. Declaring this here stops
+         App Store Connect asking on every single upload. -->
+    <key>ITSAppUsesNonExemptEncryption</key>  <false/>
+
     <!-- Diagnostics need every orientation: the display sweep and the motion
          tests both depend on being able to rotate the device. -->
     <key>UISupportedInterfaceOrientations</key>

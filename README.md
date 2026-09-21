@@ -426,6 +426,64 @@ Worth recording, because none was visible in a simulator:
 - First install requires trusting the developer profile on the device
   (Settings › General › VPN & Device Management) — that needs the passcode.
 
+## Icons
+
+Both icons come from one vector source, `Scripts/generate-icons.sh` -- a pulse
+trace with radiating "listening" arcs, after the auscultation the project is
+named for. The host puts the trace on a dark field (the trace is the sound
+source); the agent runs it through a device on a light field (the device is
+what is being listened to).
+
+The script exists because iOS and macOS want opposite geometry from the same
+artwork:
+
+| | iOS / iPadOS | macOS |
+|---|---|---|
+| shape | full bleed, square | squircle drawn in, ~10% margin |
+| corners | none -- the system masks | drawn here; nothing masks on macOS |
+| alpha | **must not have a channel at all** | required, for the margin |
+
+That alpha rule is the one that bites. App Store validation rejects an icon
+that merely *has* an alpha channel, even one opaque in every pixel, and
+`rsvg-convert` always emits RGBA while neither `sips` nor `iconutil` can drop
+the channel. The script redraws through a `CGBitmapContext` with
+`noneSkipLast`, which makes ImageIO write a 24-bit PNG.
+
+## Distribution
+
+**The agent (iOS + iPadOS) ships through TestFlight.** One binary covers both
+-- `TARGETED_DEVICE_FAMILY: "1,2"`. Build it with `Scripts/archive-agent.sh`,
+which is separate from `build-agent.sh` on purpose: that script picks the
+newest Xcode so a device on an iOS seed gets a matching SDK, and App Store
+Connect rejects anything built with a beta Xcode. The archive script pins the
+release Xcode and refuses to run on a seed.
+
+Note that the archive signs with Apple Development and the wildcard profile;
+the distribution identity and the Store profile are applied at *export*.
+Inspecting the archive instead of the `.ipa` will tell you the wrong thing.
+
+**The macOS app cannot ship through TestFlight, and this is architectural
+rather than a signing problem.** macOS TestFlight is reachable only through
+the Mac App Store channel, which mandates `com.apple.security.app-sandbox`.
+The sandbox denies `connect()` to `/var/run/usbmuxd`, which is the one thing
+this app exists to do -- measured directly, same bundle, same
+`com.apple.security.device.usb` entitlement:
+
+```
+sandboxed      DENIED: Operation not permitted (errno 1)
+not sandboxed  CONNECTED to usbmuxd
+```
+
+`com.apple.security.device.usb` governs IOUSBHost device access, not a system
+daemon's socket, and no public entitlement covers the latter. The app also
+spawns `xcrun devicectl` and `cfgutil`, which a sandboxed process may not do.
+Shipping it on the Mac App Store would mean deleting the transports that make
+it useful.
+
+The correct macOS path is **Developer ID plus notarisation** -- distributed
+outside the store, no sandbox required, everything above keeps working. That
+route has no TestFlight, so beta distribution there is a direct download.
+
 ## Roadmap
 
 **Phase 5 — baselines.** The CSV export exists so two runs of the same device

@@ -34,6 +34,10 @@ for b in "$BIN_DIR"/*.bundle; do
     [ -e "$b" ] && cp -R "$b" "$APP/Contents/Resources/"
 done
 
+# The icon has to be copied in by hand: there is no asset catalog on this side,
+# because the GUI is a plain SwiftPM executable rather than an Xcode target.
+cp "$ROOT/Resources/Auscult.icns" "$APP/Contents/Resources/Auscult.icns"
+
 # Record when this bundle was built. A running app keeps its old code in
 # memory after a rebuild, so without a visible stamp it is impossible to tell
 # a stale window from a current one — which cost a debugging session once.
@@ -48,6 +52,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDisplayName</key>       <string>Auscult</string>
     <key>CFBundleIdentifier</key>        <string>com.yasir.auscult</string>
     <key>CFBundleExecutable</key>        <string>Auscult</string>
+    <key>CFBundleIconFile</key>          <string>Auscult</string>
+    <key>CFBundleIconName</key>          <string>Auscult</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key>           <string>1</string>

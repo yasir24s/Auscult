@@ -19,3 +19,8 @@ ModuleCache/
 
 # Generated Xcode project (xcodegen rebuilds it)
 Agent/AuscultAgent.xcodeproj/
+
+# Intermediate vector output of Scripts/generate-icons.sh (the script is the
+# source of truth). The rasters it produces ARE committed, so building needs
+# no rsvg-convert.
+Resources/Icons/*.svg
