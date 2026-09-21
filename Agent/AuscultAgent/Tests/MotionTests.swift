@@ -319,8 +319,10 @@ struct MagnetometerTest: AgentTest {
         // Only grade against Earth's field once iOS says the fit is usable;
         // before that the calibrated vector is meaningless.
         let usable = calibrated.filter { $0 > 0 }
+        var calibratedMean: Double?
         if bestAccuracy >= 0, !usable.isEmpty {
             let cal = MotionSampler.stats(usable)
+            calibratedMean = cal.mean
             // A reading well outside Earth's field almost always means a
             // magnet nearby rather than a broken sensor, and saying so is the
             // difference between a useful warning and a false alarm.
@@ -342,8 +344,23 @@ struct MagnetometerTest: AgentTest {
         }
 
         let verdict = rollup(metrics)
-        return result(verdict, "Field \(raw.mean.clean) µT raw, calibration \(names[bestAccuracy] ?? "unknown")",
-                      metrics: metrics)
+        // Lead with the number that is actually graded. The raw figure includes
+        // the device's own magnets — on a MagSafe phone it routinely reads ten
+        // times Earth's field — so putting it first makes a perfectly healthy
+        // sensor look broken. And say "quality" out loud: "calibration high"
+        // sitting next to a µT value parses as another magnitude rather than as
+        // the best of four accuracy levels, which is the opposite of reassuring.
+        let quality = names[bestAccuracy] ?? "unknown"
+        let summary = if let calibratedMean {
+            "Calibrated field \(calibratedMean.clean) µT · calibration quality \(quality)"
+        } else {
+            // Say what passed before what is missing. The sensor genuinely did
+            // pass every check that can be made without a calibration fit, so
+            // leading with "not calibrated" reads as a fault next to a green
+            // tick — the same contradiction the audio test had.
+            "Sensor responding, but uncalibrated — move the device in a figure-eight for a field reading"
+        }
+        return result(verdict, summary, metrics: metrics)
     }
 }
 
