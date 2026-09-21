@@ -256,8 +256,16 @@ struct GPUTest: AgentTest {
                     threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
                 )
                 encoder.endEncoding()
-                buffer.commit()
-                buffer.waitUntilCompleted()
+                // Suspend rather than block. waitUntilCompleted parks the
+                // calling thread, and on Swift's cooperative pool that occupies
+                // a worker that cannot yield -- with few cores that starves the
+                // very progress reporting this test emits. The handler must be
+                // attached before commit, or the buffer can finish first and
+                // the continuation never resumes.
+                await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+                    buffer.addCompletedHandler { _ in c.resume() }
+                    buffer.commit()
+                }
                 if Task.isCancelled { throw CancellationError() }
             }
             let elapsed = Date().timeIntervalSince(start)

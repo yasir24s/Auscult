@@ -10,7 +10,11 @@ import SwiftUI
 @MainActor
 @Observable
 final class InteractionCoordinator {
-    static let shared = InteractionCoordinator()
+    /// Reachable from any actor. The class is `@MainActor`, so every *member*
+    /// still requires the main actor — only the reference itself crosses, and a
+    /// global-actor-isolated class is implicitly Sendable. Without this the
+    /// tests, which are nonisolated async, cannot even name the singleton.
+    nonisolated static let shared = InteractionCoordinator()
 
     enum Mode: Equatable {
         case idle
@@ -22,7 +26,7 @@ final class InteractionCoordinator {
 
     private(set) var mode: Mode = .idle
 
-    private init() {}
+    nonisolated private init() {}
 
     // MARK: Colour sweep
 
