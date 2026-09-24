@@ -20,7 +20,10 @@ struct HostLinkView: View {
                 }
 
                 Section("This Device") {
-                    LabeledContent("Model", value: DeviceFacts.machine)
+                    LabeledContent("Model", value: DeviceFacts.displayName)
+                    if DeviceFacts.marketingName != nil {
+                        LabeledContent("Identifier", value: DeviceFacts.machine)
+                    }
                     LabeledContent("System", value: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
                     if let build = DeviceFacts.osBuild {
                         LabeledContent("Build", value: build)

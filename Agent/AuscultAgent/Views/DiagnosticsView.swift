@@ -133,9 +133,12 @@ struct DiagnosticsView: View {
                 }
             }
         } header: {
-            Text(DeviceFacts.machine)
+            Text(DeviceFacts.displayName)
         } footer: {
-            Text("\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+            // The identifier stays visible, just not as the headline: it is the
+            // exact hardware revision, which matters when comparing devices.
+            Text((DeviceFacts.marketingName != nil ? "\(DeviceFacts.machine) · " : "")
+                 + "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
                  + (DeviceFacts.osBuild.map { " (\($0))" } ?? "")
                  + " · Agent \(AgentInfo.version)")
         }

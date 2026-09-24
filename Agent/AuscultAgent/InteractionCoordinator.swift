@@ -69,6 +69,16 @@ final class InteractionCoordinator {
         if grid.isComplete { finishTouchGrid() }
     }
 
+    /// Called by the overlay once the grid and the touch surface have laid out.
+    /// Equality-guarded so a re-render caused by the write cannot loop.
+    func recordFrames(drawn: CGRect? = nil, touch: CGRect? = nil) {
+        guard case .touchGrid(var grid) = mode else { return }
+        var changed = false
+        if let drawn, grid.drawnFrame != drawn { grid.drawnFrame = drawn; changed = true }
+        if let touch, grid.touchFrame != touch { grid.touchFrame = touch; changed = true }
+        if changed { mode = .touchGrid(grid) }
+    }
+
     func finishTouchGrid() {
         guard let continuation = gridContinuation else { return }
         gridContinuation = nil
@@ -121,6 +131,12 @@ struct TouchGrid: Equatable {
     /// layout problem on our side rather than a fault in the digitizer.
     var rawEvents: Int = 0
     var deadline: Date = .distantFuture
+    /// Where the grid was drawn and where touches were mapped, both in window
+    /// coordinates. They must be the same rectangle: if they differ, a finger
+    /// on one square is credited to its neighbour, which can make a dead strip
+    /// of digitizer look alive. They once differed by the safe-area insets.
+    var drawnFrame: CGRect?
+    var touchFrame: CGRect?
 
     var total: Int { rows * columns }
     var isComplete: Bool { total > 0 && touched.count >= total }

@@ -206,6 +206,15 @@ enum DeviceFacts {
         return String(cString: bytes)
     }
 
+    /// What the device is sold as — "iPhone 13" — or nil for a model newer
+    /// than `DeviceModels`. The raw identifier is Apple's internal family code
+    /// and does not match the product name: an iPhone 13 is "iPhone14,5", which
+    /// the first tester reasonably read as being told he owned an iPhone 14.
+    static var marketingName: String? { DeviceModels.name(for: machine) }
+
+    /// The name to put in front of a person, falling back to the identifier.
+    static var displayName: String { marketingName ?? machine }
+
     static var osBuild: String? {
         var size = 0
         sysctlbyname("kern.osversion", nil, &size, nil, 0)

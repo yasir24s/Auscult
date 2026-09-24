@@ -102,6 +102,10 @@ struct DeadPixelSweepTest: AgentTest {
 /// Maximum simultaneous touches is recorded at the same time, since it comes
 /// free from the same gesture stream.
 struct TouchGridTest: AgentTest {
+    private static func describe(_ r: CGRect) -> String {
+        "\(Int(r.width))×\(Int(r.height)) pt at (\(Int(r.minX)), \(Int(r.minY)))"
+    }
+
     private static let rows = 8
     private static let columns = 5
     private static let timeout: TimeInterval = 60
@@ -142,6 +146,26 @@ struct TouchGridTest: AgentTest {
                         : nil),
         ]
 
+        // Self-check: were touches mapped against the frame the grid was drawn
+        // in? If not, the coverage figure above is measuring the wrong squares.
+        // Graded .error, not .fail — a mismatch is a fault in this app, never
+        // in the digitizer, and the verdict has to say so.
+        var mappingAligned = true
+        if let drawn = grid.drawnFrame, let touch = grid.touchFrame {
+            let aligned = abs(drawn.minX - touch.minX) <= 1 && abs(drawn.minY - touch.minY) <= 1
+                && abs(drawn.width - touch.width) <= 1 && abs(drawn.height - touch.height) <= 1
+            metrics.append(.flag(
+                "mapping", "Touches mapped to the drawn grid", aligned,
+                shouldBe: true, severityIfNot: .error,
+                note: aligned
+                    ? "the touch surface and the drawn grid are the same rectangle"
+                    : "touch surface \(Self.describe(touch)) but grid drawn at \(Self.describe(drawn)) — "
+                      + "touches are credited to the wrong square; a fault in this app, not the digitizer"))
+            mappingAligned = aligned
+            metrics.append(.reading("drawnFrame", "Grid drawn at", Self.describe(drawn)))
+            metrics.append(.reading("touchFrame", "Touches mapped over", Self.describe(touch)))
+        }
+
         if !grid.missed.isEmpty {
             // Naming the cells is the whole point — it localises the fault.
             metrics.append(.list("missed", "Cells with no touch", grid.missed,
@@ -170,9 +194,14 @@ struct TouchGridTest: AgentTest {
                 "No touches reached the test — nothing was traced, or the overlay did not accept input",
                 metrics: metrics)
         }
-        let summary = grid.isComplete
-            ? "All \(grid.total) cells responded"
-            : "\(grid.missed.count) of \(grid.total) cells never registered a touch"
+        // A misaligned mapping outranks coverage in the summary: coverage was
+        // measured against the wrong squares, so "all cells responded" beside
+        // an ERROR verdict would be a verdict contradicting its own summary.
+        let summary = !mappingAligned
+            ? "Touches were mapped to the wrong squares, so coverage can't be trusted — a fault in this app, not the digitizer"
+            : grid.isComplete
+                ? "All \(grid.total) cells responded"
+                : "\(grid.missed.count) of \(grid.total) cells never registered a touch"
         return result(verdict, summary, metrics: metrics)
     }
 }

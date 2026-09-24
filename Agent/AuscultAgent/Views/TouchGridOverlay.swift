@@ -11,12 +11,27 @@ struct TouchGridOverlay: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
+                // The drawn grid and the touch surface share ONE container and
+                // therefore one frame. They used to be sized separately — the
+                // grid ignored the safe area and filled the screen, while the
+                // touch view was pinned to GeometryReader's size, which is the
+                // safe area. Rows were then drawn over one height and mapped
+                // over another: a tester on an iPhone 13 found touches landing
+                // late going up and early going down, and horizontal fine,
+                // because portrait has no side insets. A digitizer test that
+                // credits a touch to the neighbouring square can hide a dead
+                // strip, so this is not cosmetic. `mapping` in the result
+                // verifies the two frames match on every run.
+                ZStack {
                 // Cells light up as they register, so the person can see what
                 // they've still to cover — and, if a region is dead, watch it
                 // stay dark no matter how hard they rub it.
-                VStack(spacing: 1) {
+                //
+                // Spacing 0 so a drawn cell is exactly height/rows — the same
+                // arithmetic TouchView uses. The stroke overlay draws the lines.
+                VStack(spacing: 0) {
                     ForEach(0..<grid.rows, id: \.self) { row in
-                        HStack(spacing: 1) {
+                        HStack(spacing: 0) {
                             ForEach(0..<grid.columns, id: \.self) { column in
                                 let hit = grid.touched.contains(
                                     TouchGrid.Cell(row: row, column: column)
@@ -28,17 +43,22 @@ struct TouchGridOverlay: View {
                         }
                     }
                 }
-                .ignoresSafeArea()
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { coordinator.recordFrames(drawn: g.frame(in: .global)) }
+                        .onChange(of: g.frame(in: .global)) { _, f in coordinator.recordFrames(drawn: f) }
+                })
 
-                // The capture view sits above the visuals and must be given an
-                // explicit full-screen frame: a plain UIView has no intrinsic
-                // content size, so SwiftUI can lay it out at zero and then no
-                // touch ever reaches it — which reads as a completely dead
-                // digitizer.
-                MultiTouchSurface(rows: grid.rows, columns: grid.columns) { row, col, simultaneous in
+                // The capture view sits above the visuals. It must be flexible
+                // rather than left to its intrinsic size: a plain UIView has
+                // none, so SwiftUI can lay it out at zero and no touch ever
+                // reaches it. maxWidth/maxHeight fills the shared container —
+                // NOT geo.size, which is the safe area and caused the offset.
+                MultiTouchSurface(rows: grid.rows, columns: grid.columns, onTouch: { row, col, simultaneous in
                     coordinator.registerTouch(row: row, column: col, maxSimultaneous: simultaneous)
+                }, onLayout: { coordinator.recordFrames(touch: $0) })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .frame(width: geo.size.width, height: geo.size.height)
                 .ignoresSafeArea()
 
                 // Only the Finish button may take touches; everything else in
@@ -77,6 +97,8 @@ private struct MultiTouchSurface: UIViewRepresentable {
     let rows: Int
     let columns: Int
     let onTouch: (Int, Int, Int) -> Void
+    /// The surface's frame in window coordinates, for the mapping self-check.
+    let onLayout: (CGRect) -> Void
 
     func makeUIView(context: Context) -> TouchView {
         let view = TouchView()
@@ -85,6 +107,7 @@ private struct MultiTouchSurface: UIViewRepresentable {
         view.rows = rows
         view.columns = columns
         view.onTouch = onTouch
+        view.onLayout = onLayout
         return view
     }
 
@@ -92,12 +115,23 @@ private struct MultiTouchSurface: UIViewRepresentable {
         view.rows = rows
         view.columns = columns
         view.onTouch = onTouch
+        view.onLayout = onLayout
     }
 
     final class TouchView: UIView {
         var rows = 1
         var columns = 1
         var onTouch: ((Int, Int, Int) -> Void)?
+        var onLayout: ((CGRect) -> Void)?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            // nil target = window coordinates, which is the same space as
+            // SwiftUI's .global — so this compares like with like.
+            guard window != nil, bounds.width > 0 else { return }
+            let frame = convert(bounds, to: nil)
+            DispatchQueue.main.async { [weak self] in self?.onLayout?(frame) }
+        }
 
         override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             report(touches, event)
