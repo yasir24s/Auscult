@@ -28,7 +28,7 @@ settings:
     # entitlements; it loads nothing dynamically, so library validation holds.
     ENABLE_HARDENED_RUNTIME: YES
     MARKETING_VERSION: "0.1.1"
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
 
 targets:
   Auscult:
