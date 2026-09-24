@@ -49,18 +49,14 @@ struct CameraTest: AgentTest {
             mediaType: .video, position: .unspecified
         )
 
-        // Physical lenses only. The virtual multi-camera devices (.builtInDualCamera
-        // and friends) are compositions of lenses already in the list, so testing
-        // them would double-count and slow the run for no extra coverage.
-        let physical = discovery.devices.filter { device in
-            switch device.deviceType {
-            case .builtInWideAngleCamera, .builtInUltraWideCamera,
-                 .builtInTelephotoCamera, .builtInTrueDepthCamera:
-                true
-            default:
-                false
-            }
-        }
+        // One entry per physical sensor. Filtering by device type is not enough:
+        // iOS exposes one sensor under several types. An iPad Air's single
+        // Center Stage front camera appears as both a Wide and an Ultra Wide
+        // device, and TrueDepth is the front camera again — so an iPad with two
+        // cameras reported three, and an iPhone 17 Pro Max with four reported six.
+        let (physical, merged) = Self.distinctSensors(discovery.devices)
+        let names = Self.names(for: physical)
+        func name(_ d: AVCaptureDevice) -> String { names[d.uniqueID] ?? d.localizedName }
 
         guard !physical.isEmpty else {
             return result(.fail, "No cameras were discovered on this device",
@@ -69,8 +65,14 @@ struct CameraTest: AgentTest {
 
         var metrics: [AgentMetric] = [
             .number("count", "Cameras discovered", Double(physical.count)),
-            .list("discovered", "Lenses", physical.map { Self.label(for: $0) }),
+            .list("discovered", "Cameras", physical.map(name)),
         ]
+        if !merged.isEmpty {
+            metrics.append(.list(
+                "merged", "Listed twice by iOS", merged,
+                note: "the same physical camera exposed under more than one name — each "
+                    + "camera is tested once"))
+        }
 
         // Two passes, deliberately.
         //
@@ -85,7 +87,7 @@ struct CameraTest: AgentTest {
             if Task.isCancelled { throw CancellationError() }
             context.progress(
                 Double(index) / Double(physical.count) * 0.5,
-                "Capturing from \(Self.label(for: device))"
+                "Capturing from \(name(device))"
             )
             do {
                 results.append((device, try await Self.captureStatistics(from: device), nil))
@@ -94,18 +96,23 @@ struct CameraTest: AgentTest {
             }
         }
 
+        // Flat black is retried alongside ordinary darkness: a lens pressed
+        // against a desk can return a perfectly uniform black frame, because
+        // the image pipeline denoises and clamps black in total darkness. That
+        // is indistinguishable from a dead sensor until the view is changed.
         let darkIndices = results.indices.filter { index in
-            results[index].stats.map(Self.isDark) ?? false
+            results[index].stats.map(Self.needsLight) ?? false
         }
+        var retriedInLight: Set<Int> = []
 
         if !darkIndices.isEmpty {
-            let names = darkIndices.map { Self.label(for: results[$0].device) }
+            let darkNames = darkIndices.map { name(results[$0].device) }
             context.awaitingUser(
                 "Hold the device up so nothing covers the lenses, then confirm on screen"
             )
-            let plural: String = names.count == 1 ? "camera" : "cameras"
-            let joined: String = names.joined(separator: ", ")
-            let message: String = "\(names.count) \(plural) saw only darkness (\(joined)).\n\n"
+            let plural: String = darkNames.count == 1 ? "camera" : "cameras"
+            let joined: String = darkNames.joined(separator: ", ")
+            let message: String = "\(darkNames.count) \(plural) saw only darkness (\(joined)).\n\n"
                 + "Hold the device up, away from any surface, with the room lit — then tap Ready."
             let answer = await context.askUser(UserPrompt(
                 message: message,
@@ -120,10 +127,11 @@ struct CameraTest: AgentTest {
                     if Task.isCancelled { throw CancellationError() }
                     context.progress(
                         0.5 + Double(offset) / Double(darkIndices.count) * 0.45,
-                        "Re-testing \(Self.label(for: results[index].device))"
+                        "Re-testing \(name(results[index].device))"
                     )
                     if let retry = try? await Self.captureStatistics(from: results[index].device) {
                         results[index].stats = retry
+                        retriedInLight.insert(index)
                     }
                 }
             }
@@ -131,9 +139,17 @@ struct CameraTest: AgentTest {
 
         var failures: [String] = []
         var inconclusive: [String] = []
+        // A tap on Ready is a claim, not evidence. On an iPad the retry once
+        // condemned the rear camera "in a lit room" while the front camera, in
+        // the same pass, measured 0.12/255 — the room was dark. So a flat black
+        // frame is only condemned if another camera saw real light in the retry.
+        // A single-camera device has no possible witness; the tap has to do.
+        let lightWitnessed = physical.count == 1 || results.enumerated().contains { i, r in
+            retriedInLight.contains(i) && (r.stats.map { Self.classify($0) == .live } ?? false)
+        }
 
-        for entry in results {
-            let name = Self.label(for: entry.device)
+        for (index, entry) in results.enumerated() {
+            let name = name(entry.device)
             let id = Self.metricID(for: entry.device)
 
             guard let stats = entry.stats else {
@@ -149,11 +165,36 @@ struct CameraTest: AgentTest {
                 metrics.append(.flag("\(id).alive", "\(name) — sensor producing an image",
                                      true, shouldBe: true))
             case .frozen:
+                // Uniform but not black: no cover over a lens produces this.
                 metrics.append(.flag("\(id).alive", "\(name) — sensor producing an image",
                                      false, shouldBe: true, severityIfNot: .fail,
-                                     note: "perfectly uniform frame with not even sensor "
-                                         + "read noise — this is a dead sensor"))
+                                     note: "a perfectly uniform, non-black frame — the image "
+                                         + "pipeline is frozen, which no lens cover can cause"))
                 failures.append(name)
+            case .flatBlack where retriedInLight.contains(index) && lightWitnessed:
+                // Still nothing after the person confirmed an uncovered lens in
+                // a lit room — now, and only now, it is fair to call it dead.
+                metrics.append(.flag("\(id).alive", "\(name) — sensor producing an image",
+                                     false, shouldBe: true, severityIfNot: .fail,
+                                     // Says what was observed, not more: the witness proves
+                                     // the room was lit, not that the device was lifted.
+                                     note: "still a perfectly black frame after the retry, while "
+                                         + "another camera saw light — this sensor is not responding. "
+                                         + "If the lens was resting on something, re-run holding the "
+                                         + "device up"))
+                failures.append(name)
+            case .flatBlack:
+                metrics.append(AgentMetric(
+                    id: "\(id).alive", label: "\(name) — sensor producing an image",
+                    kind: .bool, raw: "false", verdict: .skipped,
+                    note: retriedInLight.contains(index)
+                        ? "still saw nothing — but no camera saw real light in the retry either, "
+                          + "so the room was too dark to tell a covered lens from a dead sensor. "
+                          + "Try again somewhere brighter"
+                        : "saw nothing at all — a covered lens or a dead sensor look the same "
+                          + "in the dark; hold the device up in a lit room and re-run to tell which"
+                ))
+                inconclusive.append(name)
             case .dark:
                 metrics.append(AgentMetric(
                     id: "\(id).alive", label: "\(name) — sensor producing an image",
@@ -177,7 +218,7 @@ struct CameraTest: AgentTest {
         let confirmed = physical.count - failures.count - inconclusive.count
         let summary: String
         if !failures.isEmpty {
-            summary = "Dead sensor on: \(failures.joined(separator: ", "))"
+            summary = "Not responding: \(failures.joined(separator: ", "))"
         } else if !inconclusive.isEmpty {
             let darkCount: Int = inconclusive.count
             summary = "\(confirmed) of \(physical.count) confirmed live; "
@@ -192,8 +233,11 @@ struct CameraTest: AgentTest {
     enum Classification {
         /// Real detail: the sensor and the optics both work.
         case live
-        /// Perfectly uniform — not even read noise. Only a dead sensor does this.
+        /// Perfectly uniform and not black. A stuck pipeline; no cover does this.
         case frozen
+        /// Perfectly uniform black. A dead sensor — or a lens pressed flat
+        /// against something, since darkness is denoised and clamped to black.
+        case flatBlack
         /// Alive but with nothing to see: covered lens or an unlit room.
         case dark
     }
@@ -203,22 +247,91 @@ struct CameraTest: AgentTest {
     /// frame means the sensor is fine and the view is not — which is what a
     /// phone lying face-up on a desk produces, and must not be called a fault.
     static func classify(_ stats: FrameStatistics) -> Classification {
-        if stats.standardDeviation <= 0.0001 { return .frozen }
+        if stats.standardDeviation <= 0.0001 {
+            // Below 1/255 is black for this purpose; the iPad's covered rear
+            // lens measured exactly 0 mean and 0 σ.
+            return stats.mean < 1 ? .flatBlack : .frozen
+        }
         if stats.standardDeviation > 1.5 { return .live }
         return .dark
     }
 
-    static func isDark(_ stats: FrameStatistics) -> Bool {
-        classify(stats) == .dark
+    /// Frames that say nothing until the device is held up in the light.
+    static func needsLight(_ stats: FrameStatistics) -> Bool {
+        let c = classify(stats)
+        return c == .dark || c == .flatBlack
     }
 
     static func metricID(for device: AVCaptureDevice) -> String {
         "cam." + device.uniqueID.replacingOccurrences(of: ":", with: "-")
     }
 
-    static func label(for device: AVCaptureDevice) -> String {
+    /// Physical sensors, each once, plus a description of what was merged.
+    ///
+    /// Virtual devices (Dual, Triple, TrueDepth, LiDAR) are compositions and go.
+    /// Two remaining lenses on the same side are only *proven* to be separate
+    /// sensors if some virtual device is built from both — iOS provides one for
+    /// every side with more than one real camera, which is how an iPhone's
+    /// Triple camera vouches for its three rear lenses. Nothing vouches for an
+    /// iPad's front Wide and Ultra Wide, because they are one sensor.
+    static func distinctSensors(_ all: [AVCaptureDevice]) -> ([AVCaptureDevice], [String]) {
+        let virtuals = all.filter(\.isVirtualDevice)
+        func provenDistinct(_ a: AVCaptureDevice, _ b: AVCaptureDevice) -> Bool {
+            virtuals.contains { v in
+                let ids = Set(v.constituentDevices.map(\.uniqueID))
+                return ids.contains(a.uniqueID) && ids.contains(b.uniqueID)
+            }
+        }
+        // Keep the native sensor over its derived views: an Ultra Wide front
+        // camera's "Wide" entry is a crop of it, and TrueDepth wraps it.
+        let preference: [AVCaptureDevice.DeviceType] = [
+            .builtInUltraWideCamera, .builtInWideAngleCamera,
+            .builtInTelephotoCamera, .builtInTrueDepthCamera,
+        ]
+        let candidates = all
+            .filter { !$0.isVirtualDevice || $0.deviceType == .builtInTrueDepthCamera }
+            .filter { preference.contains($0.deviceType) }
+            .sorted { (preference.firstIndex(of: $0.deviceType) ?? 99)
+                    < (preference.firstIndex(of: $1.deviceType) ?? 99) }
+
+        var kept: [AVCaptureDevice] = []
+        var merged: [String] = []
+        for c in candidates {
+            if let twin = kept.first(where: { $0.position == c.position && !provenDistinct($0, c) }) {
+                merged.append("\(rawLabel(for: c)) = \(rawLabel(for: twin))")
+            } else {
+                kept.append(c)
+            }
+        }
+        // Rear before front, then Wide, Ultra Wide, Telephoto — the order
+        // people read a spec sheet in.
+        let order: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera, .builtInUltraWideCamera, .builtInTelephotoCamera,
+        ]
+        kept.sort {
+            if $0.position != $1.position { return $0.position == .back }
+            return (order.firstIndex(of: $0.deviceType) ?? 99) < (order.firstIndex(of: $1.deviceType) ?? 99)
+        }
+        return (kept, merged)
+    }
+
+    /// Display names. A side with one camera is just "Rear camera" or "Front
+    /// camera" — lens names only mean something where a side has several, and
+    /// on an iPad they read as though it had cameras it does not.
+    static func names(for sensors: [AVCaptureDevice]) -> [String: String] {
+        var out: [String: String] = [:]
+        for d in sensors {
+            let alone = sensors.filter { $0.position == d.position }.count == 1
+            out[d.uniqueID] = alone
+                ? (d.position == .front ? "Front camera" : "Rear camera")
+                : rawLabel(for: d)
+        }
+        return out
+    }
+
+    static func rawLabel(for device: AVCaptureDevice) -> String {
         let lens = switch device.deviceType {
-        case .builtInUltraWideCamera: "Ultra-wide"
+        case .builtInUltraWideCamera: "Ultra Wide"
         case .builtInTelephotoCamera: "Telephoto"
         case .builtInWideAngleCamera: "Wide"
         case .builtInTrueDepthCamera: "TrueDepth"
@@ -264,13 +377,21 @@ struct CameraTest: AgentTest {
         session.startRunning()
         defer { session.stopRunning() }
 
-        // Discard the first frames: sensors start dark and auto-exposure needs a
-        // moment, so an immediate grab would look like a failed camera.
-        let deadline = Date().addingTimeInterval(4)
+        // Judge the camera on a window of frames, not one. It used to take the
+        // 8th frame — about a quarter of a second in — and in dim light
+        // auto-exposure is still ramping then, so a working camera could be
+        // judged on a warm-up frame that was still black. Now: stop as soon as
+        // any frame shows real detail, otherwise watch for up to 3 s and report
+        // the most detailed frame seen. A dead sensor stays flat throughout.
+        let deadline = Date().addingTimeInterval(6)
         while Date() < deadline {
-            if let stats = collector.statistics { return stats }
+            let snap = collector.snapshot
+            if snap.sawLive, let best = snap.best { return best }
+            if let best = snap.best, let first = snap.firstMeasuredAt,
+               Date().timeIntervalSince(first) >= 3 { return best }
             try? await Task.sleep(nanoseconds: 120_000_000)
         }
+        if let best = collector.snapshot.best { return best }
         throw CameraError.noFrames
     }
 
@@ -290,10 +411,14 @@ struct CameraTest: AgentTest {
 /// Collects frames and computes luminance statistics off the main thread.
 private final class FrameCollector: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private let lock = NSLock()
-    private var _statistics: CameraTest.FrameStatistics?
+    private var best: CameraTest.FrameStatistics?
+    private var sawLive = false
+    private var firstMeasuredAt: Date?
     private var framesSeen = 0
 
-    var statistics: CameraTest.FrameStatistics? { lock.withLock { _statistics } }
+    var snapshot: (best: CameraTest.FrameStatistics?, sawLive: Bool, firstMeasuredAt: Date?) {
+        lock.withLock { (best, sawLive, firstMeasuredAt) }
+    }
 
     func captureOutput(
         _ output: AVCaptureOutput,
@@ -302,8 +427,9 @@ private final class FrameCollector: NSObject, AVCaptureVideoDataOutputSampleBuff
     ) {
         lock.lock()
         framesSeen += 1
-        // Let auto-exposure settle before believing what we see.
-        let ready = framesSeen >= 8 && _statistics == nil
+        // Skip the warm-up frames, then measure every other frame until one
+        // shows real detail — halving the work keeps the capture queue free.
+        let ready = framesSeen >= 8 && framesSeen % 2 == 0 && !sawLive
         lock.unlock()
         guard ready, let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
@@ -336,11 +462,14 @@ private final class FrameCollector: NSObject, AVCaptureVideoDataOutputSampleBuff
         let mean = sum / n
         let variance = max(sumSquares / n - mean * mean, 0)
 
+        let stats = CameraTest.FrameStatistics(
+            mean: mean, standardDeviation: variance.squareRoot(),
+            width: width, height: height
+        )
         lock.withLock {
-            _statistics = CameraTest.FrameStatistics(
-                mean: mean, standardDeviation: variance.squareRoot(),
-                width: width, height: height
-            )
+            if firstMeasuredAt == nil { firstMeasuredAt = Date() }
+            if best == nil || stats.standardDeviation > best!.standardDeviation { best = stats }
+            if CameraTest.classify(stats) == .live { sawLive = true }
         }
     }
 }
