@@ -361,9 +361,15 @@ struct ThermalTest: AgentTest {
             return result(.unsupported, "Not enough load samples to judge throttling")
         }
 
-        let first = perSecond.prefix(2).reduce(0, +) / 2
+        // Measured against the fastest second, not the first two. The opening
+        // seconds include the clocks ramping up, so using them as the baseline
+        // made it low: a steady device read over 100% (a tester asked, twice),
+        // and a low baseline inflates the ratio enough to hide mild throttling.
+        // The average of the last two seconds can never exceed the single
+        // fastest second, so this is at most 100% by construction.
+        let peak = perSecond.max() ?? 0
         let last = perSecond.suffix(2).reduce(0, +) / 2
-        let retained = first > 0 ? last / first * 100 : 0
+        let retained = peak > 0 ? last / peak * 100 : 0
 
         var metrics: [AgentMetric] = [
             .reading("stateBefore", "Thermal state before", Self.describe(before)),
@@ -373,14 +379,7 @@ struct ThermalTest: AgentTest {
             // losing more than half of throughput is not.
             .graded("retained", "Throughput retained", retained, unit: "%",
                     warnAt: 70, failAt: 45, higherIsBetter: true,
-                    // Over 100% is real, not a rounding slip: the opening two
-                    // seconds include the clocks ramping up, so a device that
-                    // never throttles finishes slightly faster than it started.
-                    // Left unexplained it reads as a bug.
-                    note: retained >= 100
-                        ? "last two seconds vs first two — above 100% because the "
-                          + "processor was still speeding up at the start, and never slowed down"
-                        : "last two seconds vs first two",
+                    note: "speed over the last two seconds, against the fastest second of the run",
                     expectation: "above 70% after 14 s of load"),
             .number("peakRate", "Peak batches/s", perSecond.max() ?? 0),
         ]
@@ -395,9 +394,12 @@ struct ThermalTest: AgentTest {
         // Lead with the conclusion a person actually wants. "Retained 103.93% of
         // throughput" makes them wonder whether the test is broken; the number
         // stays in the metrics for anyone who wants it.
-        let summary = retained >= 97
-            ? "No throttling — held full speed under sustained load; ended \(Self.describe(after))"
-            : "Slowed to \(retained.clean)% of starting speed under load; ended \(Self.describe(after))"
+        // 95 rather than 100: the peak is the best of ~14 noisy samples, so it
+        // sits a little above a steady device's typical second. A few percent
+        // below it is noise, not throttling.
+        let summary = retained >= 95
+            ? "No throttling — held \(retained.clean)% of peak speed; ended \(Self.describe(after))"
+            : "Slowed to \(retained.clean)% of peak speed under load; ended \(Self.describe(after))"
         return result(verdict, summary, metrics: metrics)
     }
 }

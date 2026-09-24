@@ -32,10 +32,9 @@ struct ResultsGuideView: View {
     /// Results that look like bugs and are not. Every entry here is a question
     /// a real tester asked.
     private static let oddities: [(String, String)] = [
-        ("Thermal shows more than 100%",
-         "The first seconds of the test include the processor speeding up, so a device "
-            + "that never slows down finishes slightly faster than it began. Above 100% "
-            + "means no throttling at all."),
+        ("Thermal shows 96–99%, not 100%",
+         "It's measured against the single fastest second of the run, which is always "
+            + "a touch above a typical one. Anything from about 95% up means no throttling."),
         ("The magnetometer's raw field is in the hundreds",
          "The raw figure includes the device's own magnets — MagSafe especially. The "
             + "calibrated figure is the one that's graded, and it should sit around 25–65 µT."),

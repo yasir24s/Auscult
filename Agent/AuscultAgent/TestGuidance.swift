@@ -83,8 +83,8 @@ enum TestGuidance {
         // Thermal, storage, power
         "thermal.sustained": Entry(
             about: "Works every core flat out for about 14 seconds, then compares the "
-                + "last two seconds with the first two. A device that can't shed heat "
-                + "slows itself down to stay safe, and that shows up here.",
+                + "last two seconds with the fastest second of the run. A device that can't "
+                + "shed heat slows itself down to stay safe, and that shows up here.",
             preparation: "Unplug the charger first — charging adds heat of its own and "
                 + "can make healthy cooling look poor."),
         "storage.throughput": Entry(
