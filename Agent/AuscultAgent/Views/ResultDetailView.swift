@@ -15,6 +15,22 @@ struct ResultDetailView: View {
 
     var body: some View {
         List {
+            // What it checks and how to prepare come BEFORE the run button, so
+            // they are read before it is tapped rather than discovered after a
+            // false failure.
+            if let about = descriptor?.about {
+                Section {
+                    Text(about).font(.callout)
+                }
+            }
+            if let prep = descriptor?.preparation {
+                Section("Before you run") {
+                    Label(prep, systemImage: "hand.point.right")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                }
+            }
+
             if let descriptor {
                 Section {
                     if isRunningThis {
@@ -48,7 +64,7 @@ struct ResultDetailView: View {
             }
 
             if let result {
-                Section("Verdict") {
+                Section {
                     HStack(spacing: 10) {
                         Image(systemName: result.verdict.symbol)
                             .foregroundStyle(result.verdict.tint)
@@ -62,6 +78,13 @@ struct ResultDetailView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.tertiary)
                     }
+                } header: {
+                    Text("Verdict")
+                } footer: {
+                    NavigationLink("What does \(result.verdict.label.lowercased()) mean?") {
+                        ResultsGuideView()
+                    }
+                    .font(.footnote)
                 }
 
                 if !result.metrics.isEmpty {

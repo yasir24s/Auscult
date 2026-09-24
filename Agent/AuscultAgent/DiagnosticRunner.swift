@@ -40,7 +40,7 @@ final class DiagnosticRunner {
     var catalogue: [AgentTestDescriptor] { registry.catalogue() }
 
     func descriptor(for id: String) -> AgentTestDescriptor? {
-        registry.test(withID: id)?.descriptor
+        registry.descriptor(withID: id)
     }
 
     func result(for id: String) -> AgentTestResult? {
@@ -55,8 +55,14 @@ final class DiagnosticRunner {
     /// and gives up after 45s, so including them would turn an unattended sweep
     /// into several minutes of timeouts reported as failures. They stay
     /// individually runnable.
+    /// Exactly what `runAll` will run. The pre-run checklist reads this too,
+    /// so the setup it lists can never drift from the tests that execute.
+    var runAllQueue: [AgentTestDescriptor] {
+        catalogue.filter { $0.isRunnable && !$0.requiresInteraction }
+    }
+
     func runAll() {
-        let queue = catalogue.filter { $0.isRunnable && !$0.requiresInteraction }
+        let queue = runAllQueue
         guard !queue.isEmpty else { return }
         runTask?.cancel()
         sweepRemaining = queue.count

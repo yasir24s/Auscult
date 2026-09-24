@@ -4,6 +4,9 @@ import SwiftUI
 struct DiagnosticsView: View {
     @Environment(DiagnosticRunner.self) private var runner
     @Environment(InteractionCoordinator.self) private var coordinator
+    @AppStorage("skipRunAllChecklist") private var skipChecklist = false
+    @State private var showChecklist = false
+    @State private var showGuide = false
 
     /// Catalogue grouped by section, in first-appearance order rather than
     /// alphabetically — the registry lists sensors before benchmarks on
@@ -42,12 +45,30 @@ struct DiagnosticsView: View {
                     if runner.state.isRunning {
                         Button("Stop", role: .destructive) { runner.cancel() }
                     } else {
-                        Button("Run All") { runner.runAll() }
+                        Button("Run All") {
+                            if skipChecklist { runner.runAll() } else { showChecklist = true }
+                        }
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showGuide = true } label: {
+                        Label("About Results", systemImage: "questionmark.circle")
                     }
                 }
                 ToolbarItem(placement: .secondaryAction) {
                     Button("Clear Results") { runner.clearResults() }
                         .disabled(runner.results.isEmpty)
+                }
+            }
+            .sheet(isPresented: $showChecklist) { RunAllChecklist() }
+            .sheet(isPresented: $showGuide) {
+                NavigationStack {
+                    ResultsGuideView()
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { showGuide = false }
+                            }
+                        }
                 }
             }
             .overlay(alignment: .bottom) {
@@ -87,9 +108,10 @@ struct DiagnosticsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("No tests run yet")
                         .font(.body.weight(.medium))
-                    Text("Run All covers everything that works unattended. Tests marked "
-                         + "\"needs you\" ask you to look at the screen or touch it, so "
-                         + "run those one at a time.")
+                    Text("Run All covers everything that works unattended, and tells "
+                         + "you how to set the device up first. Tests marked \"needs you\" "
+                         + "ask you to look at the screen or touch it, so run those one at "
+                         + "a time. Tap ? for what the results mean.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -65,6 +65,14 @@ public struct AgentTestDescriptor: Codable, Sendable, Identifiable, Hashable {
     public var estimatedSeconds: Double
     /// Why this test can't run right now, if it can't.
     public var unavailableReason: String?
+    /// Plain-language account of what the test checks, for people who are not
+    /// engineers. Optional on the wire: synthesized Codable decodes a missing
+    /// key as nil, so an older agent's catalogue still decodes on a newer host
+    /// and an older host ignores the extra key — no protocol version bump.
+    public var about: String?
+    /// What to do before running so the setup does not cause a false failure —
+    /// lay it flat, uncover the lenses, go outdoors.
+    public var preparation: String?
 
     public var isRunnable: Bool { unavailableReason == nil }
 
@@ -74,13 +82,16 @@ public struct AgentTestDescriptor: Codable, Sendable, Identifiable, Hashable {
         permission: AgentPermission? = nil,
         permissionGranted: Bool = true,
         estimatedSeconds: Double = 1,
-        unavailableReason: String? = nil
+        unavailableReason: String? = nil,
+        about: String? = nil,
+        preparation: String? = nil
     ) {
         self.id = id; self.title = title; self.section = section
         self.requiresInteraction = requiresInteraction
         self.permission = permission; self.permissionGranted = permissionGranted
         self.estimatedSeconds = estimatedSeconds
         self.unavailableReason = unavailableReason
+        self.about = about; self.preparation = preparation
     }
 }
 

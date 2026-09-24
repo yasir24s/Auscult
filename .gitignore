@@ -24,3 +24,6 @@ Agent/AuscultAgent.xcodeproj/
 # source of truth). The rasters it produces ARE committed, so building needs
 # no rsvg-convert.
 Resources/Icons/*.svg
+
+# Live task monitor output (~/.claude/tools) — written into whichever repo it serves
+task-monitor.html

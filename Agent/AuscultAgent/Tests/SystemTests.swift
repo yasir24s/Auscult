@@ -373,7 +373,14 @@ struct ThermalTest: AgentTest {
             // losing more than half of throughput is not.
             .graded("retained", "Throughput retained", retained, unit: "%",
                     warnAt: 70, failAt: 45, higherIsBetter: true,
-                    note: "last two seconds vs first two",
+                    // Over 100% is real, not a rounding slip: the opening two
+                    // seconds include the clocks ramping up, so a device that
+                    // never throttles finishes slightly faster than it started.
+                    // Left unexplained it reads as a bug.
+                    note: retained >= 100
+                        ? "last two seconds vs first two — above 100% because the "
+                          + "processor was still speeding up at the start, and never slowed down"
+                        : "last two seconds vs first two",
                     expectation: "above 70% after 14 s of load"),
             .number("peakRate", "Peak batches/s", perSecond.max() ?? 0),
         ]
@@ -385,9 +392,13 @@ struct ThermalTest: AgentTest {
         }
 
         let verdict = rollup(metrics)
-        return result(verdict,
-                      "Retained \(retained.clean)% of throughput; ended \(Self.describe(after))",
-                      metrics: metrics)
+        // Lead with the conclusion a person actually wants. "Retained 103.93% of
+        // throughput" makes them wonder whether the test is broken; the number
+        // stays in the metrics for anyone who wants it.
+        let summary = retained >= 97
+            ? "No throttling — held full speed under sustained load; ended \(Self.describe(after))"
+            : "Slowed to \(retained.clean)% of starting speed under load; ended \(Self.describe(after))"
+        return result(verdict, summary, metrics: metrics)
     }
 }
 
@@ -542,7 +553,9 @@ struct StorageThroughputTest: AgentTest {
 /// Reports installed and available memory.
 struct MemoryTest: AgentTest {
     var descriptor: AgentTestDescriptor {
-        AgentTestDescriptor(id: "memory.info", title: "Memory",
+        // "Memory" alone is read as storage by most people, and a small number
+        // there looks alarming next to a 256 GB phone. Name it RAM.
+        AgentTestDescriptor(id: "memory.info", title: "Memory (RAM)",
                             section: "Compute", estimatedSeconds: 1)
     }
 
@@ -553,9 +566,14 @@ struct MemoryTest: AgentTest {
         let availableToApp = Int64(os_proc_available_memory())
 
         var metrics: [AgentMetric] = [
-            .number("physicalGiB", "Installed memory",
-                    Double(physical) / 1_073_741_824, unit: "GiB"),
-            .bytes("physical", "Installed memory (bytes)", physical),
+            .number("physicalGiB", "Installed RAM",
+                    Double(physical) / 1_073_741_824, unit: "GiB",
+                    note: "working memory for open apps — not storage"),
+            // The same quantity in decimal units, which is why it reads as a
+            // bigger number. Unlabelled, the pair looked like two different
+            // amounts of RAM.
+            .bytes("physical", "Installed RAM, decimal units", physical,
+                   note: "same amount — 1 GB is 1000³ bytes, 1 GiB is 1024³"),
             .number("processors", "Active processors",
                     Double(ProcessInfo.processInfo.activeProcessorCount)),
         ]
@@ -577,7 +595,8 @@ struct MemoryTest: AgentTest {
         // summary with the metric's decimal rendering made one device look like
         // it had both 11.42 GB and 12.26 GB of memory.
         let gib = Double(physical) / 1_073_741_824
-        return result(.info, "\(gib.clean) GiB installed", metrics: metrics)
+        return result(.info, "\(gib.clean) GiB of RAM — working memory, not storage",
+                      metrics: metrics)
     }
 }
 

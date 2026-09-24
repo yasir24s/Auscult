@@ -65,7 +65,17 @@ struct TestRegistry {
         TouchGridTest(),
     ]
 
-    func catalogue() -> [AgentTestDescriptor] { tests.map(\.descriptor) }
+    /// Every descriptor goes out through `TestGuidance`, so the plain-language
+    /// copy reaches the standalone UI and the Mac alike. Anything that shows a
+    /// descriptor to a person must come through here or `descriptor(withID:)`,
+    /// never `test.descriptor` directly, or it silently loses the copy.
+    func catalogue() -> [AgentTestDescriptor] {
+        tests.map { TestGuidance.enrich($0.descriptor) }
+    }
+
+    func descriptor(withID id: String) -> AgentTestDescriptor? {
+        test(withID: id).map { TestGuidance.enrich($0.descriptor) }
+    }
 
     func test(withID id: String) -> AgentTest? {
         tests.first { $0.descriptor.id == id }
