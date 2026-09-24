@@ -77,8 +77,16 @@ enum TestGuidance {
         "memory.info": Entry(
             about: "Reports how much RAM the device has. RAM is working memory — what "
                 + "apps use while they're open — and is normally 4–12 GB. It is not "
-                + "storage: your photos and apps live in storage, which is far larger.",
+                + "storage: your photos and apps live in storage, which is far larger. "
+                + "To test the RAM itself under load, run RAM Under Pressure.",
             preparation: nil),
+        "memory.pressure": Entry(
+            about: "Fills most of the memory an app is allowed with test data, which forces "
+                + "iOS to squeeze everything else — and close other apps if it has to — then "
+                + "reads it all back to check every byte survived. Shows how much memory an app can really get, when the "
+                + "device starts to struggle, and whether the RAM holds data correctly under load.",
+            preparation: "Save anything open in other apps first — iOS may close them to make "
+                + "room, and they'd reopen from scratch. Stay in this app until it finishes."),
 
         // Thermal, storage, power
         "thermal.sustained": Entry(

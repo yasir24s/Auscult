@@ -24,12 +24,19 @@ targets:
       # source then defines the wire types on both sides with no possibility of
       # the two drifting.
       - path: ../Shared/AuscultProtocol
+    # Raises iOS's per-app memory ceiling so RAM Under Pressure can push the
+    # device harder before it has to stop short of its own limit. A public
+    # capability since iOS 15; automatic signing adds it to the App ID.
+    entitlements:
+      path: AuscultAgent/AuscultAgent.entitlements
+      properties:
+        com.apple.developer.kernel.increased-memory-limit: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yasir.auscult.agent
         PRODUCT_NAME: Auscult Agent
-        MARKETING_VERSION: "0.3.1"
-        CURRENT_PROJECT_VERSION: "7"
+        MARKETING_VERSION: "0.4.0"
+        CURRENT_PROJECT_VERSION: "8"
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: AuscultAgent/Info.plist

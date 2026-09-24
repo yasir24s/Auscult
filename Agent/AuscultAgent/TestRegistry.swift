@@ -55,6 +55,7 @@ struct TestRegistry {
         ThermalTest(),
         StorageThroughputTest(),
         MemoryTest(),
+        MemoryPressureTest(),
         BiometricsTest(),
         PowerContextTest(),
         CameraTest(),
