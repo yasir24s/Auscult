@@ -1,4 +1,5 @@
 import Foundation
+import AuscultProtocol
 
 /// Battery condition.
 ///
@@ -96,27 +97,56 @@ public struct BatteryProbe: Probe {
         }
 
         // --- Health -------------------------------------------------------
-        let design = number("DesignCapacity")
+        // Capacity keys appear more than once in the battery tree, in different
+        // units, and `search` returns the first hit while walking dictionaries
+        // in no fixed order. On an iPad Air M3 FullChargeCapacity read 9,338 mAh
+        // on one run and 100 on the next — which, once health took the lower of
+        // two figures, reported 1% on a 96% battery. So every occurrence is
+        // collected, only values plausible as mAh for this battery are kept,
+        // and the choice is deterministic.
+        func numbers(_ key: String) -> [Double] { g.searchAll(forKey: key).compactMap(\.double) }
+        let design = numbers("DesignCapacity").filter { $0 >= 500 }.max()
             ?? BatteryReference.designCapacity(forProductType: device.productType).map(Double.init)
-        let nominal = number("NominalChargeCapacity")
-        let fullCharge = number("FullChargeCapacity")
+        func capacity(_ key: String) -> Double? {
+            guard let design, design > 0 else { return nil }
+            return numbers(key).filter { (0.4...1.15).contains($0 / design) }.min()
+        }
+        let nominal = capacity("NominalChargeCapacity")
+        let fullCharge = capacity("FullChargeCapacity")
+        let cycleCount = number("CycleCount")
+        // Apple rates iPhone 14 and earlier at 80% after 500 cycles, iPhone 15
+        // and later and iPad after 1000. The grading used to assume 1000 for
+        // everything, so an iPhone 13 well past its rated life still passed.
+        let rating = BatteryGuide.rating(forModelName: device.marketingName)
 
         if let design, design > 0 {
-            // NominalChargeCapacity is the conservative, unsmoothed measure and
-            // the one that tracks real degradation. FullChargeCapacity runs a
-            // few points higher; iOS's own "Maximum Capacity" is rounded again
-            // on top of that. Report the strict figure and show the others so
-            // the difference is visible rather than hidden.
-            if let measured = nominal ?? fullCharge {
+            // Report the lower of the two capacity figures. This used to assume
+            // NominalChargeCapacity was always the conservative one, but on an
+            // iPad Air M3 nominal read 9,524 mAh (97.4%) and full charge 9,338
+            // (95.5%) — the lower — while Settings showed 96%. The minimum is
+            // conservative by definition, whichever it is on a given battery,
+            // and lands on the figure Settings rounds to.
+            let candidates = [nominal, fullCharge].compactMap { $0 }
+            if let measured = candidates.min() {
                 let health = min(measured / design * 100, 100)
+                let a = BatteryGuide.assess(capacity: health,
+                                            cycles: cycleCount.map { Int($0) }, rating: rating)
+                // Pass from 80%: Apple designs batteries to keep 80% through
+                // their rated life, so 80-85% is normal wear, not a warning.
+                // Warning there alarmed people about healthy batteries. The
+                // wording is BatteryGuide's, identical to the device's.
                 metrics.append(.graded(
                     "health", "Battery health", health, unit: "%",
-                    warnAt: 85, failAt: 79, higherIsBetter: true,
-                    note: nominal != nil
-                        ? "nominal charge capacity vs design"
-                        : "full charge capacity vs design",
-                    expectation: "Apple considers replacement below 80%"
+                    warnAt: 79.999, failAt: -1, higherIsBetter: true,
+                    note: "\(a.condition) — \(a.meaning) (the lower of nominal and "
+                        + "full-charge capacity, vs design)",
+                    expectation: "80% or more is within Apple's design"
                 ))
+                if let paceShort = a.paceShort, let pace = a.pace {
+                    var m = Metric.reading("pace", "Wear pace", .string(paceShort))
+                    m.note = pace
+                    metrics.append(m)
+                }
             }
             metrics.append(.reading("designCapacity", "Design capacity",
                 .int(Int64(design)), unit: "mAh"))
@@ -131,19 +161,27 @@ public struct BatteryProbe: Probe {
         }
 
         if let reported = number("MaxCapacity") {
-            metrics.append(.reading("maxCapacityReported", "Maximum capacity (as iOS shows it)",
+            // Not the Settings figure, whatever the key name suggests: it read
+            // 100% on an iPad whose Settings showed 96%. Labelled as the raw
+            // gauge field it is, so nobody takes it for Maximum Capacity.
+            metrics.append(.reading("maxCapacityReported", "Gauge MaxCapacity field",
                 .double(reported), unit: "%",
-                note: "rounded by iOS; compare with the computed health above"))
+                note: "a raw battery-controller value, not the Maximum Capacity Settings "
+                    + "shows — use Battery health above"))
         }
 
         // --- Wear ---------------------------------------------------------
-        if let cycles = number("CycleCount") {
-            // Apple rates recent iPhone cells at 80% capacity after 1000 cycles.
-            metrics.append(.graded(
-                "cycles", "Cycle count", cycles, unit: "cycles",
-                warnAt: 800, failAt: 1000, higherIsBetter: false,
-                expectation: "rated to 1000 cycles"
-            ))
+        if let cycles = cycleCount {
+            // A reading, not a grade. Passing the rated count is not a fault —
+            // a battery past it can still hold well over 80% — so capacity
+            // carries the verdict and cycles give it context.
+            var m = Metric.reading("cycles", "Cycle count", .int(Int64(cycles)), unit: "cycles")
+            if let rating {
+                let used = Int((cycles / Double(rating.ratedCycles) * 100).rounded())
+                m.note = "\(used)% of the \(rating.ratedCycles) cycles Apple designs this model "
+                    + "to reach at 80% capacity"
+            }
+            metrics.append(m)
         }
 
         if let installed = g.search(forKey: "BatteryInstalled").bool {
