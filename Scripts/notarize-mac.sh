@@ -98,3 +98,28 @@ ditto -c -k --keepParent "$APP" "$ZIP"
 echo
 echo "Notarised and stapled: $ZIP"
 spctl -a -vv -t exec "$APP" 2>&1 | sed -n 's/^/  /p'
+
+# Publish as a GitHub Release when asked. The Mac app cannot use TestFlight, so
+# this is its beta channel. The asset keeps one fixed name so a single link —
+# releases/latest/download/Auscult-mac.zip — always serves the newest build;
+# the version lives in the tag and title instead. The repo is private, so only
+# collaborators can download.
+if [ "${RELEASE:-0}" = "1" ]; then
+    command -v gh >/dev/null || { echo "RELEASE=1 needs the GitHub CLI (gh)." >&2; exit 1; }
+    BUILDNO="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist")"
+    TAG="mac-v$VERSION"
+    ASSET="$OUT/Auscult-mac.zip"
+    cp "$ZIP" "$ASSET"
+    if gh release view "$TAG" >/dev/null 2>&1; then
+        # Same version, new build: replace the asset rather than minting a tag
+        # for a version number that has not changed.
+        gh release upload "$TAG" "$ASSET" --clobber
+        gh release edit "$TAG" --title "Auscult for Mac $VERSION (build $BUILDNO)"
+    else
+        gh release create "$TAG" --target "$(git -C "$ROOT" rev-parse HEAD)" \
+            --title "Auscult for Mac $VERSION (build $BUILDNO)" --latest \
+            --notes "Developer ID signed and notarised. Unzip, move Auscult to Applications, open." \
+            "$ASSET"
+    fi
+    echo "Published: $(gh release view "$TAG" --json url -q .url)"
+fi
