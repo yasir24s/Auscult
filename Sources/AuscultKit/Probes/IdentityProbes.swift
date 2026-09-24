@@ -103,7 +103,13 @@ public struct SoftwareProbe: Probe {
         ))
 
         if let rt = device.releaseType {
-            metrics.append(.reading("releaseType", "Release type", .string(rt)))
+            var m = Metric.reading("releaseType", "Release type (CoreDevice)", .string(rt))
+            if device.releaseTypeContradictsBuild {
+                m.note = "reported by CoreDevice, but \(device.osBuild ?? "the build") is a release "
+                    + "build, which is what decides the prerelease tag — this label may reflect "
+                    + "beta-update enrolment rather than the installed software"
+            }
+            metrics.append(m)
         }
 
         // A supplemental build (rapid security response) is worth flagging

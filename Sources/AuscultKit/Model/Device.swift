@@ -81,13 +81,32 @@ public struct DeviceSnapshot: Codable, Sendable, Identifiable, Hashable {
 
     public init(id: String) { self.id = id }
 
-    /// True when Apple itself flags this as a prerelease build, by any signal.
-    /// Build letters after the train letter (e.g. `24A5418b`) mark seeds.
+    /// Whether the *installed* build is a prerelease.
+    ///
+    /// The build number decides whenever there is one, because it is the only
+    /// signal that describes the installed software itself: Apple's seeds carry
+    /// a revision of four or more digits after the train letter (`24A5418b`),
+    /// release builds do not (`24A435`). CoreDevice's `releaseType` used to win
+    /// over it, and reported "Beta" for release 24A435 and 24J360 on an iPhone,
+    /// iPad and Apple TV whose owner is on no beta — so every device wore a BETA
+    /// tag. It most likely follows beta-update enrolment rather than what is
+    /// installed; it is still shown as a raw reading, just not trusted over this.
     public var isPrereleaseOS: Bool {
-        if let r = releaseType?.lowercased(), r.contains("beta") || r.contains("seed") { return true }
         if hasInternalOSBuild == true { return true }
-        guard let b = osBuild else { return false }
-        // Seed builds carry a 4-digit-or-more revision, e.g. 24A5418b vs 24A348.
+        if let b = osBuild { return Self.isSeedBuild(b) }
+        // No build number at all: CoreDevice's label is the only signal left.
+        if let r = releaseType?.lowercased(), r.contains("beta") || r.contains("seed") { return true }
+        return false
+    }
+
+    /// CoreDevice calls the OS a beta while the build number says release.
+    public var releaseTypeContradictsBuild: Bool {
+        guard let b = osBuild, let r = releaseType?.lowercased() else { return false }
+        return (r.contains("beta") || r.contains("seed")) && !Self.isSeedBuild(b)
+    }
+
+    /// Seed builds carry a 4-digit-or-more revision, e.g. 24A5418b vs 24A348.
+    static func isSeedBuild(_ b: String) -> Bool {
         let digits = b.drop { !$0.isNumber }.prefix { $0.isNumber }
         if let rev = b.dropFirst(digits.count).first, rev.isLetter {
             let tail = b.dropFirst(digits.count + 1).prefix { $0.isNumber }
