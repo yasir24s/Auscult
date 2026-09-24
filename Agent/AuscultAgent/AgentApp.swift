@@ -23,7 +23,7 @@ struct AuscultAgentApp: App {
                 // Start listening anyway: a host may attach at any point, and
                 // the Diagnostics tab does not care either way.
                 .onAppear { server.start() }
-                .statusBarHidden(InteractionCoordinator.shared.mode != .idle)
+                .statusBarHidden(InteractionCoordinator.shared.mode.takesOverScreen)
         }
     }
 }

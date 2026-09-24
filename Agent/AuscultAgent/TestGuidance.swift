@@ -109,6 +109,14 @@ enum TestGuidance {
             about: "Writes and reads a temporary file to measure how fast the built-in "
                 + "storage is. The file is deleted afterwards.",
             preparation: nil),
+        "battery.health": Entry(
+            about: "Judges your battery's health from the figures in Settings — Maximum "
+                + "Capacity and, where Settings shows it, Cycle Count — against what Apple "
+                + "designs the battery in your model to reach, and explains what they mean.",
+            preparation: nil,
+            runsAlone: "iOS doesn't let apps read battery health, so it needs you to read two "
+                + "figures from Settings and type them in. It runs on its own rather than as "
+                + "part of Run All."),
         "power.context": Entry(
             about: "Records the conditions that affect battery readings — brightness, "
                 + "charging, Low Power Mode and temperature — so other results can be "

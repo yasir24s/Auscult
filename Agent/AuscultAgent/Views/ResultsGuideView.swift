@@ -47,6 +47,10 @@ struct ResultsGuideView: View {
         ("The satellite receiver warns indoors",
          "Satellite signals don't travel well through buildings. Run it outdoors or at a "
             + "window before worrying."),
+        ("Why do I have to type in my battery health?",
+         "iOS doesn't let apps read it — only the Settings app can show it. Auscult judges the "
+            + "figures you enter against what Apple designs your model's battery for. Auscult for "
+            + "Mac reads the battery directly over USB, with no typing."),
         ("Sensors fail when I hold the phone",
          "They measure the device at rest, and a hand is never truly still. Lay it flat "
             + "on a table and run them again."),

@@ -22,6 +22,17 @@ final class InteractionCoordinator {
         case solidColour(name: String, colour: SweepColour)
         /// Grid the person must trace over so every cell registers a touch.
         case touchGrid(TouchGrid)
+        /// Ask for the battery figures only Settings can show.
+        case batteryForm(BatteryForm)
+
+        /// A colour field or a grid must own every pixel; a form must not
+        /// hide the status bar, or the person loses the clock and battery.
+        var takesOverScreen: Bool {
+            switch self {
+            case .solidColour, .touchGrid: true
+            case .idle, .batteryForm: false
+            }
+        }
     }
 
     private(set) var mode: Mode = .idle
@@ -84,7 +95,33 @@ final class InteractionCoordinator {
     /// timeout; the runner discards what it returns.
     func dismissForCancellation() {
         finishTouchGrid()
+        submitBattery(nil)
         mode = .idle
+    }
+
+    // MARK: Battery form
+
+    private var batteryContinuation: CheckedContinuation<BatteryEntry?, Never>?
+
+    /// Show the form and wait for the figures, or nil if skipped. Five minutes,
+    /// not the usual 45 s: the person has to go to Settings and come back.
+    func runBatteryForm(_ form: BatteryForm, timeout: TimeInterval = 300) async -> BatteryEntry? {
+        mode = .batteryForm(form)
+        let entry = await withCheckedContinuation { (c: CheckedContinuation<BatteryEntry?, Never>) in
+            batteryContinuation = c
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                self.submitBattery(nil)
+            }
+        }
+        mode = .idle
+        return entry
+    }
+
+    func submitBattery(_ entry: BatteryEntry?) {
+        guard let c = batteryContinuation else { return }
+        batteryContinuation = nil
+        c.resume(returning: entry)
     }
 
     func finishTouchGrid() {
@@ -125,6 +162,16 @@ enum SweepColour: String, CaseIterable, Equatable {
         case .black: "a true black with no glowing pixels or backlight bleed"
         }
     }
+}
+
+struct BatteryForm: Equatable {
+    let modelName: String
+    let rating: BatteryGuide.Rating?
+}
+
+struct BatteryEntry: Equatable {
+    let capacity: Int
+    let cycles: Int?
 }
 
 struct TouchGrid: Equatable {

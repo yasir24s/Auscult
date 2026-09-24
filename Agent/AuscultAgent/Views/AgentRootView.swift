@@ -26,6 +26,8 @@ struct AgentRootView: View {
                 SweepOverlay(colour: colour)
             case .touchGrid(let grid):
                 TouchGridOverlay(grid: grid)
+            case .batteryForm(let form):
+                BatteryFormOverlay(form: form)
             }
         }
         .animation(.easeInOut(duration: 0.15), value: coordinator.mode)
