@@ -9,11 +9,13 @@
 #
 #   1. A "Developer ID Installer" certificate in the login keychain
 #      (Xcode › Settings › Accounts › Manage Certificates › + ).
-#   2. Notary credentials stored in the keychain under a profile name:
+#   2. Notary credentials stored in the keychain under a profile name, from an
+#      App Store Connect API key (Users and Access › Integrations › Team Keys):
 #        xcrun notarytool store-credentials auscult-notary \
-#            --apple-id <apple id> --team-id 7J53W37H95
-#      The password is typed into that prompt by the account holder; this
-#      script only ever refers to the profile, never the secret.
+#            --key AuthKey_<KEYID>.p8 --key-id <KEYID> --issuer <ISSUER-ID>
+#      Run by the account holder; this script only ever refers to the profile
+#      name, never the key. (An app-specific password also works where Apple
+#      still offers them.)
 #
 # The script checks both up front and says exactly what is missing, rather than
 # failing halfway through a notarisation.
@@ -53,7 +55,14 @@ ditto "$APP" "$WORK/root/Applications/Auscult.app"
 # copy of Auscult it finds anywhere on disk — a stale build in ~/Downloads —
 # instead of installing to /Applications, which is a confusing failure mode.
 pkgbuild --analyze --root "$WORK/root" "$WORK/components.plist" >/dev/null
-/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$WORK/components.plist"
+# macOS 27's pkgbuild leaves BundleIsRelocatable out of the analysed plist
+# entirely (older versions always wrote it), so "Set" alone fails. Set it if
+# present, add it if not, then read it back: a relocatable installer is the bug
+# this is here to prevent, so it must not pass silently.
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$WORK/components.plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :0:BundleIsRelocatable bool false" "$WORK/components.plist"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :0:BundleIsRelocatable' "$WORK/components.plist")" = "false" ] \
+    || { echo "Could not mark the component non-relocatable." >&2; exit 1; }
 pkgbuild --root "$WORK/root" --component-plist "$WORK/components.plist" \
     --identifier com.yasir.auscult.pkg --version "$VERSION" \
     --install-location / "$WORK/Auscult-component.pkg"
@@ -67,7 +76,11 @@ xcrun notarytool submit "$PKG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$PKG"
 
 # What a downloader's Mac checks before it will run an installer.
-pkgutil --check-signature "$PKG" | grep -q "Developer ID Installer" \
+# Captured first: `cmd | grep -q` under pipefail can fail on a good result when
+# grep exits early and cmd dies of SIGPIPE — it rejected a correctly signed app
+# in notarize-mac.sh once already.
+SIG="$(pkgutil --check-signature "$PKG")"
+grep -q "Developer ID Installer" <<<"$SIG" \
     || { echo "Installer is not signed with Developer ID Installer." >&2; exit 1; }
 xcrun stapler validate "$PKG"
 spctl -a -vv -t install "$PKG"
