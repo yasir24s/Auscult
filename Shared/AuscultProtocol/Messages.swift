@@ -73,6 +73,10 @@ public struct AgentTestDescriptor: Codable, Sendable, Identifiable, Hashable {
     /// What to do before running so the setup does not cause a false failure —
     /// lay it flat, uncover the lenses, go outdoors.
     public var preparation: String?
+    /// Why the test runs on its own instead of in Run All — it needs someone
+    /// to look or touch, or it asks for consent first. Nil for every test Run
+    /// All includes. Optional on the wire, like `about`.
+    public var runsAlone: String?
 
     public var isRunnable: Bool { unavailableReason == nil }
 
@@ -84,7 +88,8 @@ public struct AgentTestDescriptor: Codable, Sendable, Identifiable, Hashable {
         estimatedSeconds: Double = 1,
         unavailableReason: String? = nil,
         about: String? = nil,
-        preparation: String? = nil
+        preparation: String? = nil,
+        runsAlone: String? = nil
     ) {
         self.id = id; self.title = title; self.section = section
         self.requiresInteraction = requiresInteraction
@@ -92,6 +97,7 @@ public struct AgentTestDescriptor: Codable, Sendable, Identifiable, Hashable {
         self.estimatedSeconds = estimatedSeconds
         self.unavailableReason = unavailableReason
         self.about = about; self.preparation = preparation
+        self.runsAlone = runsAlone
     }
 }
 

@@ -50,9 +50,8 @@ struct ResultDetailView: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
-                    if descriptor.requiresInteraction {
-                        Label("Needs you to look at the screen or touch it",
-                              systemImage: "hand.tap")
+                    if let alone = descriptor.runsAlone {
+                        Label(alone, systemImage: "hand.raised")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }

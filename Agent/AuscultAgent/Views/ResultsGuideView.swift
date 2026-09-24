@@ -126,6 +126,11 @@ private struct TestExplainer: View {
             if let about = test.about {
                 Text(about).font(.callout).foregroundStyle(.secondary)
             }
+            if let alone = test.runsAlone {
+                Label(alone, systemImage: "hand.raised")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
             if let prep = test.preparation {
                 Label(prep, systemImage: "hand.point.right")
                     .font(.callout)
@@ -162,6 +167,13 @@ struct RunAllChecklist: View {
         return order.map { ($0, byText[$0] ?? []) }
     }
 
+    /// Runnable tests Run All skips — the complement of `runAllQueue`, so it
+    /// cannot disagree with what actually runs.
+    private var leftOut: [AgentTestDescriptor] {
+        let queued = Set(runner.runAllQueue.map(\.id))
+        return runner.catalogue.filter { $0.isRunnable && !queued.contains($0.id) }
+    }
+
     private var totalSeconds: Int {
         Int(runner.runAllQueue.reduce(0) { $0 + $1.estimatedSeconds })
     }
@@ -175,6 +187,20 @@ struct RunAllChecklist: View {
                          + "A few need the device set up first, or they can fail on "
                          + "perfectly good hardware.")
                         .font(.callout)
+                }
+
+                if !leftOut.isEmpty {
+                    Section("Not included — run these on their own") {
+                        ForEach(leftOut) { test in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(test.title).font(.callout.weight(.medium))
+                                if let alone = test.runsAlone {
+                                    Text(alone).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 1)
+                        }
+                    }
                 }
 
                 Section("Before you start") {

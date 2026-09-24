@@ -18,6 +18,10 @@ enum TestGuidance {
         /// What to do first so the setup does not cause a false failure. Nil
         /// when there is genuinely nothing to prepare.
         let preparation: String?
+        /// Why it is left out of Run All. Required for exactly the tests
+        /// marked `requiresInteraction` — `enrich` asserts it — so the
+        /// sentence can never describe behaviour the code does not have.
+        var runsAlone: String? = nil
     }
 
     /// Identical preparation text is grouped in the Run All checklist, so tests
@@ -59,11 +63,15 @@ enum TestGuidance {
         "display.sweep": Entry(
             about: "Fills the screen with solid colours one at a time so you can look "
                 + "for dead or stuck pixels, discolouration, or light bleeding at the edges.",
-            preparation: "Turn brightness up and look straight at the screen."),
+            preparation: "Turn brightness up and look straight at the screen.",
+            runsAlone: "It needs you to look at each colour and say what you see, "
+                + "so it runs on its own rather than as part of Run All."),
         "display.touch": Entry(
             about: "Shows a grid to trace over with one finger. Any square that doesn't "
                 + "register is a dead zone in the touchscreen.",
-            preparation: nil),
+            preparation: nil,
+            runsAlone: "It needs you to trace the grid with a finger, so it runs on its "
+                + "own rather than as part of Run All."),
 
         // Compute
         "compute.cpu": Entry(
@@ -86,7 +94,9 @@ enum TestGuidance {
                 + "reads it all back to check every byte survived. Shows how much memory an app can really get, when the "
                 + "device starts to struggle, and whether the RAM holds data correctly under load.",
             preparation: "Save anything open in other apps first — iOS may close them to make "
-                + "room, and they'd reopen from scratch. Stay in this app until it finishes."),
+                + "room, and they'd reopen from scratch. Stay in this app until it finishes.",
+            runsAlone: "It asks before it starts and is excluded from Run All, since on a "
+                + "device with less memory headroom iOS may close other apps to make room."),
 
         // Thermal, storage, power
         "thermal.sustained": Entry(
@@ -132,9 +142,15 @@ enum TestGuidance {
     /// Fold the copy into a descriptor. Tests never set these themselves.
     static func enrich(_ d: AgentTestDescriptor) -> AgentTestDescriptor {
         guard let entry = entries[d.id] else { return d }
+        // Left out of Run All ⇔ requiresInteraction, so the two must agree:
+        // a test that runs alone without saying why leaves people guessing,
+        // and a reason on a test Run All does include would be false.
+        assert((entry.runsAlone != nil) == d.requiresInteraction,
+               "\(d.id): runsAlone must be set for exactly the tests Run All leaves out")
         var out = d
         out.about = entry.about
         out.preparation = entry.preparation
+        out.runsAlone = entry.runsAlone
         return out
     }
 }

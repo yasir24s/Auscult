@@ -110,8 +110,8 @@ struct DiagnosticsView: View {
                         .font(.body.weight(.medium))
                     Text("Run All covers everything that works unattended, and tells "
                          + "you how to set the device up first. Tests marked \"needs you\" "
-                         + "ask you to look at the screen or touch it, so run those one at "
-                         + "a time. Tap ? for what the results mean.")
+                         + "run one at a time — each says why on its page. Tap ? for what "
+                         + "the results mean.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
