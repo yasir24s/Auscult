@@ -27,6 +27,11 @@ final class DiagnosticRunner {
 
     private let registry = TestRegistry()
     private var runTask: Task<Void, Never>?
+    /// Bumped on every start and every cancel. Progress and results carry the
+    /// generation they were started under and are dropped if it has moved on —
+    /// otherwise a test that finishes its current wait after Stop repaints
+    /// "running" half a second later, which is exactly what a tester saw.
+    private var generation = 0
     private var promptContinuation: CheckedContinuation<PromptAnswer, Never>?
 
     /// Hooks the host link fills in. All nil when running standalone, which is
@@ -96,6 +101,10 @@ final class DiagnosticRunner {
         sweepRemaining = 0
         resolvePrompt(.timedOut)
         UIApplication.shared.isIdleTimerDisabled = false
+        generation += 1
+        // Take down a colour field or touch grid at once rather than leaving it
+        // on screen until its own timeout.
+        InteractionCoordinator.shared.dismissForCancellation()
         state = .idle
         onCancelled?()
     }
@@ -105,6 +114,8 @@ final class DiagnosticRunner {
         guard let test = registry.test(withID: descriptor.id) else { return }
         let testID = descriptor.id
         let started = Date()
+        generation += 1
+        let runGeneration = generation
 
         state = .running(testID: testID, title: descriptor.title, fraction: 0, message: "Starting")
         onStarted?(descriptor)
@@ -121,11 +132,16 @@ final class DiagnosticRunner {
             // every core for seconds; on the main actor that blocks the run
             // loop and iOS's watchdog kills the app outright. UI work hops back
             // explicitly.
-            result = try await Task.detached(priority: .userInitiated) { [weak self] in
+            //
+            // A detached task does not inherit cancellation. Awaiting it
+            // directly meant Stop cancelled only this outer task while the test
+            // ran on untouched, so no test ever saw Task.isCancelled. The
+            // handler forwards it.
+            let work = Task.detached(priority: .userInitiated) { [weak self] in
                 try await test.run(context: AgentTestContext(
                     progress: { fraction, message in
                         Task { @MainActor [weak self] in
-                            guard let self else { return }
+                            guard let self, self.generation == runGeneration else { return }
                             self.state = .running(
                                 testID: testID, title: descriptor.title,
                                 fraction: fraction, message: message
@@ -140,14 +156,20 @@ final class DiagnosticRunner {
                     },
                     awaitingUser: { message in
                         Task { @MainActor [weak self] in
-                            self?.onProgress?(AgentProgress(
+                            guard let self, self.generation == runGeneration else { return }
+                            self.onProgress?(AgentProgress(
                                 testID: testID, fraction: 0.5,
                                 message: message, awaitingUser: true
                             ))
                         }
                     }
                 ))
-            }.value
+            }
+            result = try await withTaskCancellationHandler {
+                try await work.value
+            } onCancel: {
+                work.cancel()
+            }
         } catch is CancellationError {
             userPrompt = nil
             onCancelled?()
@@ -161,6 +183,9 @@ final class DiagnosticRunner {
             )
         }
         result.duration = Date().timeIntervalSince(started)
+        // A run cancelled after its test had already finished measuring must
+        // not land a result the person asked to abandon.
+        guard generation == runGeneration else { return }
 
         results.removeAll { $0.testID == result.testID }
         results.append(result)

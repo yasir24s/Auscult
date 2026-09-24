@@ -385,6 +385,9 @@ struct CameraTest: AgentTest {
         // the most detailed frame seen. A dead sensor stays flat throughout.
         let deadline = Date().addingTimeInterval(6)
         while Date() < deadline {
+            // `try? await Task.sleep` returns at once when cancelled, so without
+            // this check a cancelled run would spin here for six seconds.
+            try Task.checkCancellation()
             let snap = collector.snapshot
             if snap.sawLive, let best = snap.best { return best }
             if let best = snap.best, let first = snap.firstMeasuredAt,

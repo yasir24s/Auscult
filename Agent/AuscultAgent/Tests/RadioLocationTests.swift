@@ -36,6 +36,8 @@ struct BluetoothScanTest: AgentTest {
         let outcome = await scanner.scan(seconds: 8) { fraction, message in
             context.progress(0.1 + fraction * 0.85, message)
         }
+        // A scan cut short by Stop is not an empty radio — unwind, don't grade it.
+        try Task.checkCancellation()
 
         var metrics: [AgentMetric] = [
             .reading("state", "Controller state", outcome.stateDescription),
@@ -131,6 +133,8 @@ private final class BluetoothScanner: NSObject, CBCentralManagerDelegate {
         // three seconds is nowhere near enough.
         let settleDeadline = Date().addingTimeInterval(20)
         while Date() < settleDeadline {
+            // Cancelled sleeps return immediately; without this the loop spins.
+            if Task.isCancelled { break }
             if lock.withLock({ outcome.state }) != .unknown { break }
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
@@ -141,6 +145,7 @@ private final class BluetoothScanner: NSObject, CBCentralManagerDelegate {
             ])
             let start = Date()
             while Date().timeIntervalSince(start) < seconds {
+                if Task.isCancelled { break }
                 let elapsed = Date().timeIntervalSince(start)
                 let count = lock.withLock { outcome.peripheralCount }
                 progress(elapsed / seconds, "Scanning — \(count) heard")
@@ -218,6 +223,8 @@ struct LocationFixTest: AgentTest {
         let outcome = await locator.awaitFix(timeout: 30) { fraction, message in
             context.progress(0.1 + fraction * 0.85, message)
         }
+        // A wait cut short by Stop is not a failed fix — unwind, don't grade it.
+        try Task.checkCancellation()
 
         var metrics: [AgentMetric] = []
 
@@ -233,7 +240,11 @@ struct LocationFixTest: AgentTest {
             if let error = outcome.errorDescription {
                 metrics.append(.reading("error", "Reported error", error))
             }
-            return result(rollup(metrics), "No fix within 30 seconds", metrics: metrics)
+            // Say the likely reason in the summary itself — a tester read the
+            // bare "No fix" warning as the test not working.
+            return result(rollup(metrics),
+                          "No fix within 30 seconds — usual indoors; try outdoors or at a window",
+                          metrics: metrics)
         }
 
         metrics.append(.flag("fixAcquired", "Fix acquired", true, shouldBe: true))
@@ -325,6 +336,9 @@ private final class LocationFixer: NSObject, CLLocationManagerDelegate {
         defer { manager.stopUpdatingLocation() }
 
         while Date().timeIntervalSince(started) < timeout {
+            // Stop must actually stop: a tester pressed it and the fix kept on
+            // acquiring. Cancelled sleeps return at once, so check explicitly.
+            if Task.isCancelled { break }
             let snapshot = lock.withLock { outcome }
             // A fix accurate to 20 m is good enough to stop early; waiting for
             // better wastes half a minute of the operator's time.

@@ -135,10 +135,10 @@ struct DiagnosticsView: View {
         } header: {
             Text(DeviceFacts.displayName)
         } footer: {
-            // The identifier stays visible, just not as the headline: it is the
-            // exact hardware revision, which matters when comparing devices.
-            Text((DeviceFacts.marketingName != nil ? "\(DeviceFacts.machine) · " : "")
-                 + "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+            // No model code here. Even small, "iPhone14,5" under the name was
+            // still read as "iPhone 14.5" by a tester on an iPhone 13. It lives,
+            // labelled, on the Mac Link tab for anyone comparing hardware.
+            Text("\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
                  + (DeviceFacts.osBuild.map { " (\($0))" } ?? "")
                  + " · Agent \(AgentInfo.version)")
         }

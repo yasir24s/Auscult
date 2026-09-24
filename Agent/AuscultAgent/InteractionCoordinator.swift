@@ -79,6 +79,14 @@ final class InteractionCoordinator {
         if changed { mode = .touchGrid(grid) }
     }
 
+    /// Stop pressed mid-test: remove whatever is on screen now. The grid's
+    /// continuation is resumed so its test unwinds rather than waiting out its
+    /// timeout; the runner discards what it returns.
+    func dismissForCancellation() {
+        finishTouchGrid()
+        mode = .idle
+    }
+
     func finishTouchGrid() {
         guard let continuation = gridContinuation else { return }
         gridContinuation = nil
