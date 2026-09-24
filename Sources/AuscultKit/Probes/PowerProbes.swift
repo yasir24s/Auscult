@@ -491,12 +491,22 @@ public struct PowerHistoryProbe: Probe {
                 expectation: "0 on a cool device"
             ))
         }
+        // AverageBattSkinTemp lives only in the stored boot/charge record
+        // (DeadBatteryBootData › GeneralPayload), not in any live register, and
+        // reads 0 when nothing was recorded. It was graded as a live reading —
+        // "✓ Average pack skin temperature: 0°C". Now: a non-zero value is shown
+        // as last recorded and never graded; zero is unavailable.
         if let skin = value("AverageBattSkinTemp") {
-            metrics.append(.graded(
-                "skinTemp", "Average pack skin temperature", skin, unit: "°C",
-                warnAt: 38, failAt: 45, higherIsBetter: false,
-                expectation: "under 38 °C"
-            ))
+            if skin > 0 {
+                var m = Metric.reading("skinTemp", "Average pack skin temperature (last recorded)",
+                                       .double(skin), unit: "°C")
+                m.note = "from the battery's stored boot/charge record, not a live sensor — iOS 27 "
+                    + "and iPadOS 27 expose no live battery temperature over USB"
+                metrics.append(m)
+            } else {
+                metrics.append(.absent("skinTemp", "Average pack skin temperature",
+                    why: "the battery's stored record holds no temperature (0 means no data)"))
+            }
         }
         if let disconnects = value("BatteryCellDisconnectCount") {
             metrics.append(.graded(

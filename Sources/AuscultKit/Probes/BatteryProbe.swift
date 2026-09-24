@@ -211,15 +211,38 @@ public struct BatteryProbe: Probe {
                 .double(amps), unit: "mA",
                 note: amps >= 0 ? "into the battery" : "out of the battery"))
         }
-        if let temp = number("Temperature", "VirtualTemperature",
-                             "AverageBattVirtualTemp", "AverageBattSkinTemp") {
+        // Only keys on the battery node itself are live. This used to search
+        // the whole tree and fall through to DeadBatteryBootData ›
+        // GeneralPayload — a stored boot/charge snapshot in whole °C — and
+        // graded it as a live reading: an iPhone 17 Pro Max report showed
+        // "✓ Cell temperature: 0°C". On iOS 27 and iPadOS 27 (iPhone 17 Pro
+        // Max, iPad Air M3) the battery node carries no live temperature key
+        // at all. So: live key → graded; stored non-zero value → shown as last
+        // recorded, never graded; zero or nothing → unavailable. 0 °C is no
+        // data, not a cool battery. (Reported by the Tailpiece ASR session.)
+        if let live = ["Temperature", "VirtualTemperature"].lazy.compactMap({ g[$0].double }).first {
             // Reported in centi-degrees on some generations, whole °C on others.
-            let celsius = temp > 200 ? temp / 100 : temp
+            let celsius = live > 200 ? live / 100 : live
             metrics.append(.graded(
                 "temperature", "Cell temperature", celsius, unit: "°C",
                 warnAt: 38, failAt: 45, higherIsBetter: false,
                 expectation: "under 38 °C in normal use"
             ))
+        } else {
+            let record = g.search(forKey: "GeneralPayload")
+            let stored = ["AverageBattVirtualTemp", "AverageBattSkinTemp"]
+                .lazy.compactMap { record[$0].double }.first { $0 > 0 }
+            if let stored {
+                var m = Metric.reading("temperature", "Cell temperature (last recorded)",
+                                       .double(stored), unit: "°C")
+                m.note = "from the battery's stored boot/charge record, not a live sensor — iOS 27 "
+                    + "and iPadOS 27 expose no live battery temperature over USB"
+                metrics.append(m)
+            } else {
+                metrics.append(.absent("temperature", "Cell temperature",
+                    why: "iOS 27 exposes no live battery temperature over USB, and the "
+                        + "battery's stored record holds none (0 means no data)"))
+            }
         }
 
         // --- Faults -------------------------------------------------------
