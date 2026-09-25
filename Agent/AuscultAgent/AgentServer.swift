@@ -238,7 +238,7 @@ final class AgentServer {
             protocolVersion: AgentProtocol.version,
             deviceModel: DeviceFacts.machine,
             deviceName: UIDevice.current.name,
-            osName: UIDevice.current.systemName,
+            osName: DeviceFacts.osName,
             osVersion: UIDevice.current.systemVersion,
             osBuild: DeviceFacts.osBuild,
             isSimulator: DeviceFacts.isSimulator,
@@ -298,5 +298,5 @@ final class AgentServer {
 }
 
 enum AgentInfo {
-    static let version = "0.4.4"
+    static let version = "0.4.5"
 }

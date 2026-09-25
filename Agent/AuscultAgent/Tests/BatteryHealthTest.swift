@@ -13,9 +13,14 @@ import Foundation
 /// battery directly over USB, and explains it with the same `BatteryGuide`.
 struct BatteryHealthTest: AgentTest {
     var descriptor: AgentTestDescriptor {
+        // On a Mac the model is the fake iPad macOS reports, so it would send
+        // people to iPad Settings for a Mac battery.
         AgentTestDescriptor(id: "battery.health", title: "Battery Health",
                             section: "Power & Battery", requiresInteraction: true,
-                            estimatedSeconds: 60)
+                            estimatedSeconds: 60,
+                            unavailableReason: DeviceFacts.isiOSAppOnMac
+                                ? "this is a Mac — its battery health is in System Settings › Battery"
+                                : nil)
     }
 
     func run(context: AgentTestContext) async throws -> AgentTestResult {

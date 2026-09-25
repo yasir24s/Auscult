@@ -13,8 +13,11 @@ struct HostLinkView: View {
                     StatusRow(state: server.state, runner: runner)
                     LabeledContent("Port", value: "\(AgentProtocol.port)")
                     LabeledContent("Protocol", value: "v\(AgentProtocol.version)")
-                    Text("Connect over USB from Auscult on your Mac. Keep this app in the "
-                         + "foreground — iOS closes the connection when it is backgrounded.")
+                    Text(DeviceFacts.isiOSAppOnMac
+                         ? "Not used on a Mac — Auscult for Mac connects to iPhones and iPads over "
+                           + "USB, and this Mac is not one of them."
+                         : "Connect over USB from Auscult on your Mac. Keep this app in the "
+                           + "foreground — iOS closes the connection when it is backgrounded.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -24,7 +27,7 @@ struct HostLinkView: View {
                     if DeviceFacts.marketingName != nil {
                         LabeledContent("Apple model code", value: DeviceFacts.machine)
                     }
-                    LabeledContent("System", value: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
+                    LabeledContent("System", value: "\(DeviceFacts.osName) \(UIDevice.current.systemVersion)")
                     if let build = DeviceFacts.osBuild {
                         LabeledContent("Build", value: build)
                     }

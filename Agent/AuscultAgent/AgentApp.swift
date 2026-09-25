@@ -22,7 +22,9 @@ struct AuscultAgentApp: App {
                 .environment(InteractionCoordinator.shared)
                 // Start listening anyway: a host may attach at any point, and
                 // the Diagnostics tab does not care either way.
-                .onAppear { server.start() }
+                // Not on a Mac: the link exists for a Mac to reach a phone over
+                // usbmux, and a Mac running the iPad app is not reachable that way.
+                .onAppear { if !DeviceFacts.isiOSAppOnMac { server.start() } }
                 .statusBarHidden(InteractionCoordinator.shared.mode.takesOverScreen)
         }
     }

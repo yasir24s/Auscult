@@ -212,10 +212,24 @@ enum DeviceFacts {
     /// than `DeviceModels`. The raw identifier is Apple's internal family code
     /// and does not match the product name: an iPhone 13 is "iPhone14,5", which
     /// the first tester reasonably read as being told he owned an iPhone 14.
-    static var marketingName: String? { DeviceModels.name(for: machine) }
+    static var marketingName: String? {
+        isiOSAppOnMac ? nil : DeviceModels.name(for: machine)
+    }
 
     /// The name to put in front of a person, falling back to the identifier.
-    static var displayName: String { marketingName ?? machine }
+    static var displayName: String {
+        isiOSAppOnMac ? "This Mac" : (marketingName ?? machine)
+    }
+
+    /// This iPhone/iPad app is running on an Apple Silicon Mac. macOS tells
+    /// such apps they are on an iPad for compatibility — hw.machine returns a
+    /// made-up iPad model code and systemName says "iPadOS" — so on a MacBook
+    /// the app used to head itself "iPad Pro (12.9-inch) (3rd generation)",
+    /// with the Mac's own build number labelled as iPadOS.
+    static var isiOSAppOnMac: Bool { ProcessInfo.processInfo.isiOSAppOnMac }
+
+    /// "macOS" on a Mac, whatever UIDevice claims.
+    static var osName: String { isiOSAppOnMac ? "macOS" : UIDevice.current.systemName }
 
     static var osBuild: String? {
         var size = 0

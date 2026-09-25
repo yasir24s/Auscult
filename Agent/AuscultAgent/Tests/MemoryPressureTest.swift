@@ -38,12 +38,25 @@ struct MemoryPressureTest: AgentTest {
         // coped by compressing alone — no jetsam report — but that is not
         // guaranteed on a device with less headroom.) That also keeps it out of Run All, which must
         // never evict someone's apps without asking.
+        // Never on a Mac. The safety stop is iOS's per-app memory limit, which
+        // macOS does not impose on iPad apps; without it the test falls back on
+        // 85% of RAM and macOS swaps to disk long before it signals critical —
+        // on a Mac with little free disk, that is the path to a hang or panic.
         AgentTestDescriptor(id: "memory.pressure", title: "RAM Under Pressure",
                             section: "Compute", requiresInteraction: true,
-                            estimatedSeconds: 30)
+                            estimatedSeconds: 30,
+                            unavailableReason: DeviceFacts.isiOSAppOnMac
+                                ? "not on a Mac — macOS has no per-app memory limit to stop at, "
+                                  + "so it would push this Mac into heavy swapping"
+                                : nil)
     }
 
     func run(context: AgentTestContext) async throws -> AgentTestResult {
+        // Belt and braces: the host link could ask for it by ID even though the
+        // catalogue marks it unavailable.
+        guard !DeviceFacts.isiOSAppOnMac else {
+            return result(.unsupported, "Not run on a Mac — no per-app memory limit to stop at")
+        }
         context.progress(0.02, "Asking before filling memory")
         let answer = await context.askUser(UserPrompt(
             message: "This fills most of the device's memory to put it under pressure. "

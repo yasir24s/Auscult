@@ -81,6 +81,19 @@ struct DiagnosticsView: View {
 
     @ViewBuilder
     private var summarySection: some View {
+        if DeviceFacts.isiOSAppOnMac {
+            Section {
+                Label {
+                    Text("You're running the iPhone and iPad app on a Mac. macOS presents it "
+                         + "as an iPad for compatibility, so these tests measure this Mac, not a "
+                         + "phone — and some can't run here. To diagnose an iPhone or iPad, run "
+                         + "the app on that device, or connect it to Auscult for Mac.")
+                        .font(.callout)
+                } icon: {
+                    Image(systemName: "laptopcomputer").foregroundStyle(.orange)
+                }
+            }
+        }
         Section {
             if case .running(_, let title, let fraction, let message) = runner.state {
                 VStack(alignment: .leading, spacing: 6) {
@@ -138,7 +151,7 @@ struct DiagnosticsView: View {
             // No model code here. Even small, "iPhone14,5" under the name was
             // still read as "iPhone 14.5" by a tester on an iPhone 13. It lives,
             // labelled, on the Mac Link tab for anyone comparing hardware.
-            Text("\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+            Text("\(DeviceFacts.osName) \(UIDevice.current.systemVersion)"
                  + (DeviceFacts.osBuild.map { " (\($0))" } ?? "")
                  + " · Agent \(AgentInfo.version)")
         }
