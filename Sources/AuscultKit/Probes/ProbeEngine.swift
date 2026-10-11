@@ -90,7 +90,7 @@ public struct ProbeEngine: Sendable {
         results.sort { ($0.section.order, $0.probeID) < ($1.section.order, $1.probeID) }
 
         return DiagnosticReport(
-            device: device,
+            device: device.redactedForReport,
             startedAt: started,
             finishedAt: Date(),
             results: results,

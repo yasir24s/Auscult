@@ -153,7 +153,7 @@ private actor AgentSessionPool {
             let sightings = try mux.listDevices().filter { $0.serialNumber == udid }
             // Prefer the cable for latency, but a network sighting works.
             guard let device = sightings.first(where: \.isUSB) ?? sightings.first else {
-                throw TransportError.deviceUnreachable("\(udid) is not visible to usbmuxd")
+                throw TransportError.deviceUnreachable("\(Redaction.identifier(udid)) is not visible to usbmuxd")
             }
             let client = try AgentClient.connect(deviceID: device.deviceID)
             do {

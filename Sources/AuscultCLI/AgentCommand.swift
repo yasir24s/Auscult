@@ -58,7 +58,7 @@ func runAgentCommand(
             let suffix = tags.isEmpty ? "" : "  [\(tags.joined(separator: ", "))]"
             print("  \(t.id.padding(toLength: 24, withPad: " ", startingAt: 0)) \(t.section.padding(toLength: 10, withPad: " ", startingAt: 0)) ~\(Int(t.estimatedSeconds))s\(suffix)")
         }
-        print("\nRun one with:  auscult agent \(device.udid ?? "") --test <id>")
+        print("\nRun one with:  auscult agent \(device.udid.map { String($0.suffix(4)) } ?? "") --test <id>")
         await session.agent.disconnect(from: device)
         return
     }

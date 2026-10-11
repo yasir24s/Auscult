@@ -12,7 +12,7 @@ func runUsbmuxDiagnostic() async {
         let devices = try await UsbmuxDebug.listDevices()
         print("usbmuxd sees \(devices.count) device(s)\n")
         for d in devices {
-            print("  \(d.serial)")
+            print("  \(Redaction.identifier(d.serial))")
             print("    deviceID \(d.deviceID) · \(d.connectionType)")
             switch await UsbmuxDebug.pairRecordSummary(udid: d.serial) {
             case .success(let s): print("    pair record: \(s)")

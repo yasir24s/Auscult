@@ -208,28 +208,31 @@ public struct RadioIdentityProbe: Probe {
             let imei = cfg.IMEI.string
             metrics.append(Metric(
                 id: "imei", label: "IMEI",
-                value: imei.map { .string($0) } ?? .absent,
+                value: imei.map { .string(Redaction.identifier($0)) } ?? .absent,
                 verdict: imei == nil ? .fail : .pass,
                 note: imei == nil
                     ? "cellular device reported no IMEI — the baseband is not responding"
-                    : nil
+                    : Redaction.note + ", which match Settings › General › About"
             ))
             if let imei2 = cfg.IMEI2.string {
-                metrics.append(.reading("imei2", "IMEI (second)", .string(imei2)))
+                metrics.append(.reading("imei2", "IMEI (second)",
+                    .string(Redaction.identifier(imei2)), note: Redaction.note))
             }
 
             let iccid = cfg.ICCID.string
             metrics.append(Metric(
                 id: "iccid", label: "ICCID",
-                value: iccid.map { .string($0) } ?? .absent,
+                value: iccid.map { .string(Redaction.identifier($0)) } ?? .absent,
                 verdict: .info,
-                note: iccid == nil ? "no SIM or eSIM profile active" : nil
+                note: iccid == nil ? "no SIM or eSIM profile active" : Redaction.note
             ))
             if let iccid2 = cfg.ICCID2.string {
-                metrics.append(.reading("iccid2", "ICCID (second)", .string(iccid2)))
+                metrics.append(.reading("iccid2", "ICCID (second)",
+                    .string(Redaction.identifier(iccid2)), note: Redaction.note))
             }
             if let n = cfg.phoneNumber.string {
-                metrics.append(.reading("phone", "Phone number", .string(n)))
+                metrics.append(.reading("phone", "Phone number",
+                    .string(Redaction.identifier(n)), note: Redaction.note))
             }
             if let fw = cfg.firmwareVersion.string {
                 metrics.append(.reading("baseband", "Baseband firmware", .string(fw)))
@@ -244,9 +247,10 @@ public struct RadioIdentityProbe: Probe {
             let v = cfg.path(key).string
             metrics.append(Metric(
                 id: key, label: label,
-                value: v.map { .string($0) } ?? .absent,
+                value: v.map { .string(Redaction.mac($0)) } ?? .absent,
                 verdict: v == nil ? .warn : .pass,
-                note: v == nil ? "\(radio) interface did not report an address" : nil
+                note: v == nil ? "\(radio) interface did not report an address"
+                    : "hidden except the last 2 octets"
             ))
         }
 

@@ -44,14 +44,17 @@ public struct IdentityProbe: Probe {
             device.storageCapacityBytes.map { .bytes($0) } ?? .absent))
 
         metrics.append(.reading("serial", "Serial number",
-            device.serialNumber.map { .string(Redaction.serial($0)) } ?? .absent,
+            device.serialNumber.map { .string(Redaction.identifier($0)) } ?? .absent,
             note: device.serialNumber == nil ? nil
-                : "hidden except the last 4 characters, which match Settings › General › About"))
+                : Redaction.note + ", which match Settings › General › About"))
         metrics.append(.reading("udid", "UDID",
-            device.udid.map { .string($0) } ?? .absent))
+            device.udid.map { .string(Redaction.identifier($0)) } ?? .absent,
+            note: device.udid == nil ? nil
+                : Redaction.note + "; pass them to the auscult command to pick this device"))
         metrics.append(.reading("ecid", "ECID",
-            device.ecid.map { .string($0) } ?? .absent,
-            note: device.isSimulator ? "simulators have no ECID" : nil))
+            device.ecid.map { .string(Redaction.identifier($0)) } ?? .absent,
+            note: device.isSimulator ? "simulators have no ECID"
+                : device.ecid == nil ? nil : Redaction.note))
 
         metrics.append(.reading("biometrics", "Biometric hardware",
             device.supportedBiometrics.isEmpty ? .absent : .list(device.supportedBiometrics)))

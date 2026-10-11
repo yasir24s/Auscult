@@ -18,13 +18,13 @@ public enum UsbmuxDebug {
         do {
             let record = try await UsbmuxClient().readPairRecord(udid: udid)
             var parts = [
-                "HostID \(record.hostID.prefix(8))…",
+                "HostID \(Redaction.identifier(record.hostID))",
                 "host cert \(record.hostCertificatePEM.count) B",
                 "host key \(record.hostPrivateKeyPEM.count) B",
                 "device cert \(record.deviceCertificatePEM.count) B",
             ]
             if record.escrowBag != nil { parts.append("escrow bag present") }
-            if let mac = record.wifiMACAddress { parts.append("wifi \(mac)") }
+            if let mac = record.wifiMACAddress { parts.append("wifi \(Redaction.mac(mac))") }
             return .success(parts.joined(separator: ", "))
         } catch {
             return .failure(error)

@@ -19,7 +19,7 @@ public enum LockdownDebug {
             let all = try await BlockingIO.run { try mux.listDevices() }
             step("① usbmux ListDevices → \(all.count) sighting(s)")
 
-            let candidates = udid == nil ? all : all.filter { $0.serialNumber == udid! }
+            let candidates = udid == nil ? all : all.filter { $0.serialNumber == udid! || Redaction.matchesTail(udid!, of: $0.serialNumber) }
             let ordered = preferNetwork
                 ? (candidates.first(where: { !$0.isUSB }) ?? candidates.first)
                 : (candidates.first(where: \.isUSB) ?? candidates.first)
@@ -27,10 +27,10 @@ public enum LockdownDebug {
                 step("   no matching device — connect it over USB")
                 return log.joined(separator: "\n")
             }
-            step("   using deviceID \(device.deviceID) (\(device.connectionType)) \(device.serialNumber)")
+            step("   using deviceID \(device.deviceID) (\(device.connectionType)) \(Redaction.identifier(device.serialNumber))")
 
             let record = try await BlockingIO.run { try mux.readPairRecord(udid: device.serialNumber) }
-            step("② pair record → HostID \(record.hostID)")
+            step("② pair record → HostID \(Redaction.identifier(record.hostID))")
 
             let identity = try HostIdentity.make(from: record)
             step("③ TLS identity → built")
@@ -82,7 +82,7 @@ public enum LockdownDebug {
                 let info = try await BlockingIO.run { try afc.deviceInfo() }
                 step("⑩ AFC device info → \(info.count) keys")
                 for key in info.keys.sorted() {
-                    step("     \(key) = \(info[key] ?? "")")
+                    step("     \(key) = \(Redaction.value(info[key] ?? "", forKey: key))")
                 }
                 await BlockingIO.runIgnoringErrors { afc.close() }
             } catch {
@@ -107,7 +107,7 @@ public enum LockdownDebug {
         do {
             let mux = UsbmuxClient()
             let all = try await BlockingIO.run { try mux.listDevices() }
-            let candidates = udid == nil ? all : all.filter { $0.serialNumber == udid! }
+            let candidates = udid == nil ? all : all.filter { $0.serialNumber == udid! || Redaction.matchesTail(udid!, of: $0.serialNumber) }
             let ordered = preferNetwork
                 ? (candidates.first(where: { !$0.isUSB }) ?? candidates.first)
                 : (candidates.first(where: \.isUSB) ?? candidates.first)
@@ -153,9 +153,7 @@ public enum LockdownDebug {
             if childDict.isEmpty {
                 // The dump is the kind of output that gets pasted into a bug
                 // report, so it hides serials the same way the report does.
-                let rendered = child.string.map {
-                    Redaction.isSerialKey(key) ? Redaction.serial($0) : $0
-                }
+                let rendered = child.string.map { Redaction.value($0, forKey: key) }
                     ?? child.double.map { String($0) }
                     ?? child.bool.map { $0 ? "true" : "false" }
                     ?? (child.array.isEmpty ? "(opaque)" : "[\(child.array.count) items]")

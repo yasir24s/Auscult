@@ -31,6 +31,7 @@ enum DeviceSelection {
                 $0.udid?.caseInsensitiveCompare(selector) == .orderedSame
                     || $0.ecid?.caseInsensitiveCompare(selector) == .orderedSame
                     || $0.serialNumber?.caseInsensitiveCompare(selector) == .orderedSame
+                    || Redaction.matchesTail(selector, of: $0.udid)
                     || $0.displayName.localizedCaseInsensitiveContains(selector)
             }
         }

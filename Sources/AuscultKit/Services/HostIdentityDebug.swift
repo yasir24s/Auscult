@@ -15,13 +15,13 @@ public enum HostIdentityDebug {
         }
         var lines = [
             "pair record parsed",
-            "  HostID        \(record.hostID)",
-            "  SystemBUID    \(record.systemBUID)",
+            "  HostID        \(Redaction.identifier(record.hostID))",
+            "  SystemBUID    \(Redaction.identifier(record.systemBUID))",
             "  host cert     \(record.hostCertificatePEM.count) bytes",
             "  host key      \(record.hostPrivateKeyPEM.count) bytes",
             "  device cert   \(record.deviceCertificatePEM.count) bytes",
         ]
-        if let mac = record.wifiMACAddress { lines.append("  wifi MAC      \(mac)") }
+        if let mac = record.wifiMACAddress { lines.append("  wifi MAC      \(Redaction.mac(mac))") }
 
         if let cert = HostIdentity.certificate(fromPEM: record.hostCertificatePEM) {
             let subject = SecCertificateCopySubjectSummary(cert) as String? ?? "(no subject)"

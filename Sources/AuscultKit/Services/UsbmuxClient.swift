@@ -162,9 +162,9 @@ enum UsbmuxError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noPairRecord(let u):
-            "No pair record for \(u) — trust this Mac on the device, then retry"
+            "No pair record for \(Redaction.identifier(u)) — trust this Mac on the device, then retry"
         case .malformedPairRecord(let u):
-            "Pair record for \(u) is missing its certificates"
+            "Pair record for \(Redaction.identifier(u)) is missing its certificates"
         case .connectRefused(let p, _, let d):
             "usbmuxd refused a tunnel to port \(p): \(d)"
         case .badFraming(let l):
@@ -172,7 +172,7 @@ enum UsbmuxError: LocalizedError {
         case .badReply:
             "usbmuxd reply was not a plist dictionary"
         case .deviceNotFound(let u):
-            "usbmuxd does not see \(u) — connect it over USB"
+            "usbmuxd does not see \(Redaction.identifier(u)) — connect it over USB"
         }
     }
 }

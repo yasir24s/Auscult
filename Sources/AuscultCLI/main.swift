@@ -76,6 +76,8 @@ func matches(_ device: DeviceSnapshot, _ selector: String) -> Bool {
     for candidate in [device.udid, device.ecid, device.serialNumber, device.coreDeviceIdentifier] {
         if candidate?.lowercased() == s { return true }
     }
+    // Output masks the UDID, so its visible tail has to work as a selector.
+    if Redaction.matchesTail(selector, of: device.udid) { return true }
     return device.displayName.lowercased().contains(s)
         || (device.productType?.lowercased().contains(s) ?? false)
 }
@@ -129,7 +131,7 @@ case "list":
         emit("\(d.displayName)")
         emit("    \(d.marketingName ?? d.productType ?? "?")  ·  \(d.osDescription)")
         emit("    \(tags.joined(separator: " · "))")
-        if let u = d.udid { emit("    udid \(u)") }
+        if let u = d.udid { emit("    udid \(Redaction.identifier(u))") }
         emit("")
     }
 
