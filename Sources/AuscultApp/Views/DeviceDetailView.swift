@@ -85,7 +85,7 @@ struct DeviceHeader: View {
                     Tag(device.link.rawValue, device.link == .usb ? .blue : .gray)
                     Tag(isReachable ? "\(capabilityCount) capabilities" : "offline",
                         isReachable ? .green : .orange)
-                    if let s = device.serialNumber { Tag(s, .secondary) }
+                    if let s = device.serialNumber { Tag(Redaction.serial(s), .secondary) }
                 }
                 .padding(.top, 2)
             }

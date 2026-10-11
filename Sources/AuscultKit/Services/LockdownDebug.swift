@@ -151,7 +151,11 @@ public enum LockdownDebug {
             let child = dict[key]!
             let childDict = child.dictionary
             if childDict.isEmpty {
-                let rendered = child.string
+                // The dump is the kind of output that gets pasted into a bug
+                // report, so it hides serials the same way the report does.
+                let rendered = child.string.map {
+                    Redaction.isSerialKey(key) ? Redaction.serial($0) : $0
+                }
                     ?? child.double.map { String($0) }
                     ?? child.bool.map { $0 ? "true" : "false" }
                     ?? (child.array.isEmpty ? "(opaque)" : "[\(child.array.count) items]")

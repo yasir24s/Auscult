@@ -44,7 +44,9 @@ public struct IdentityProbe: Probe {
             device.storageCapacityBytes.map { .bytes($0) } ?? .absent))
 
         metrics.append(.reading("serial", "Serial number",
-            device.serialNumber.map { .string($0) } ?? .absent))
+            device.serialNumber.map { .string(Redaction.serial($0)) } ?? .absent,
+            note: device.serialNumber == nil ? nil
+                : "hidden except the last 4 characters, which match Settings › General › About"))
         metrics.append(.reading("udid", "UDID",
             device.udid.map { .string($0) } ?? .absent))
         metrics.append(.reading("ecid", "ECID",

@@ -192,7 +192,9 @@ public struct BatteryProbe: Probe {
 
         if let serial = g.search(forKey: "Serial").string
             ?? g.search(forKey: "BatterySerialNumber").string {
-            metrics.append(.reading("batterySerial", "Battery serial", .string(serial)))
+            metrics.append(.reading("batterySerial", "Battery serial",
+                .string(Redaction.serial(serial)),
+                note: "hidden except the last 4 characters, which match the label on the cell"))
         }
 
         // --- Live electrical state ----------------------------------------
