@@ -34,7 +34,15 @@ APP="build/Build/Products/Release-iphoneos/Auscult Agent.app"
 [ -d "$APP" ] || { echo "Build produced no app bundle." >&2; exit 1; }
 
 if [ -z "$UDID" ]; then
-    UDID="$("$ROOT/.build/release/auscult" list 2>/dev/null | grep -m1 'udid ' | awk '{print $2}')" || true
+    # auscult masks UDIDs in its output, so ask devicectl for the first
+    # connected iPhone or iPad instead.
+    UDID="$(xcrun devicectl list devices --json-output /dev/stdout --quiet 2>/dev/null | python3 -c '
+import json, sys
+for d in json.load(sys.stdin)["result"]["devices"]:
+    hw = d.get("hardwareProperties", {})
+    if hw.get("platform") == "iOS" and d.get("connectionProperties", {}).get("tunnelState") != "unavailable":
+        print(hw.get("udid", "")); break
+')" || true
 fi
 [ -n "$UDID" ] || { echo "No device found. Pass a UDID, or connect one over USB." >&2; exit 1; }
 
