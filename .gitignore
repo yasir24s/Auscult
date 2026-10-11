@@ -29,3 +29,8 @@ Resources/Icons/*.svg
 
 # Live task monitor output (~/.claude/tools) — written into whichever repo it serves
 task-monitor.html
+
+# Raw device dumps carry identifiers
+p-*.json
+*-report.txt
+*.mobiledevicepairing
