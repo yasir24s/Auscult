@@ -138,10 +138,12 @@ public struct BatteryProbe: Probe {
                 metrics.append(.graded(
                     "health", "Battery health", health, unit: "%",
                     warnAt: 79.999, failAt: -1, higherIsBetter: true,
-                    note: "\(a.condition) — \(a.meaning) (the lower of nominal and "
-                        + "full-charge capacity, vs design)",
+                    note: a.meaning + " Measured from the lower of the nominal and "
+                        + "full-charge capacities, against design.",
                     expectation: "80% or more is within Apple's design"
                 ))
+                // Its own line, as on the device, rather than run into the note.
+                metrics.append(.reading("condition", "Condition", .string(a.condition)))
                 if let paceShort = a.paceShort, let pace = a.pace {
                     var m = Metric.reading("pace", "Wear pace", .string(paceShort))
                     m.note = pace

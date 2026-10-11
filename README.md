@@ -13,8 +13,9 @@ characters replaced:
 ```
 POWER & BATTERY
   ✓ Battery — 91.0% of original capacity, 619 cycles
-      ✓ Battery health: 91.04%  (Very good — Barely worn — battery life is close to what it was new.)
+      ✓ Battery health: 91.04%  (Barely worn. Battery life is close to what it was when new.)
           expected: 80% or more is within Apple's design
+        Condition: Very good
         Wear pace: On or ahead of Apple's design
         Design capacity: 4,768 mAh
         Full charge capacity: 4,485 mAh

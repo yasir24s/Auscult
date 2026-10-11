@@ -63,16 +63,18 @@ public enum BatteryGuide {
 
     public static func assess(capacity: Double, cycles: Int?, rating: Rating?) -> Assessment {
         let (verdict, condition, meaning): (AgentVerdict, String, String) = switch capacity {
+        // Each meaning is a complete sentence on its own: the agent shows it
+        // under the condition, and the Mac shows it as the health note.
         case 95...:
             (.pass, "Like new", "The battery holds almost all of its original charge.")
         case 90..<95:
-            (.pass, "Very good", "Barely worn — battery life is close to what it was new.")
+            (.pass, "Very good", "Barely worn. Battery life is close to what it was when new.")
         case 85..<90:
-            (.pass, "Good", "Normal wear. A little less time between charges than when new, "
-                + "and well within what Apple designs for.")
+            (.pass, "Good", "Normal wear. Slightly less time between charges than when new, "
+                + "and well within Apple's design.")
         case 80..<85:
-            (.pass, "Fair", "Normal wear, approaching the 80% Apple designs batteries to "
-                + "keep. Still healthy, but you'll notice shorter battery life than new.")
+            (.pass, "Fair", "Normal wear, nearing the 80% Apple designs batteries to keep. "
+                + "Still healthy, but battery life is noticeably shorter than when new.")
         default:
             (.warn, "Worn", "Below the 80% Apple designs batteries to keep. Expect noticeably "
                 + "shorter battery life; a replacement is worth considering.")
