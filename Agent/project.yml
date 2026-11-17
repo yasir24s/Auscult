@@ -24,6 +24,20 @@ targets:
       # source then defines the wire types on both sides with no possibility of
       # the two drifting.
       - path: ../Shared/AuscultProtocol
+      # The Mac half of the agent link, shown here so both ends can be read in
+      # one window. Reference only: these build as part of the Mac app.
+      - path: ../Sources/AuscultKit/Services/AgentClient.swift
+        group: Mac side
+        buildPhase: none
+      - path: ../Sources/AuscultKit/Transport/AgentTransport.swift
+        group: Mac side
+        buildPhase: none
+      - path: ../Sources/AuscultKit/Probes/AgentProbe.swift
+        group: Mac side
+        buildPhase: none
+      - path: ../Sources/AuscultCLI/AgentCommand.swift
+        group: Mac side
+        buildPhase: none
     # Raises iOS's per-app memory ceiling so RAM Under Pressure can push the
     # device harder before it has to stop short of its own limit. A public
     # capability since iOS 15; automatic signing adds it to the App ID.
